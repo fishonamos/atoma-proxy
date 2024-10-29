@@ -2122,8 +2122,6 @@ pub enum AtomaStateManagerError {
 }
 
 pub(crate) mod queries {
-    use sqlx::Pool;
-
     use super::*;
 
     /// Generates the SQL query to create the `tasks` table.

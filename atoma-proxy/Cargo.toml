@@ -8,6 +8,7 @@ license.workspace = true
 anyhow = "1.0.91"
 async-trait = "0.1.83"
 atoma-state.workspace = true
+atoma-sui.workspace = true
 axum = "0.7.7"
 clap = "4.5.20"
 flume.workspace = true

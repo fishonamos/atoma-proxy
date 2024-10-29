@@ -1,8 +1,10 @@
 use std::{path::Path};
 
 use anyhow::{Context, Result};
-use atoma_state::{state_manager, AtomaStateManager, AtomaStateManagerConfig};
+use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
+use atoma_sui::AtomaSuiConfig;
 use clap::Parser;
+use tokio::sync::watch;
 use tracing_appender::{non_blocking, rolling::{RollingFileAppender, Rotation}};
 use tracing_subscriber::{fmt::{self, format::FmtSpan, time::UtcTime}, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
@@ -15,10 +17,6 @@ const LOG_FILE: &str = "atoma-proxy-service.log";
 /// Command line arguments for the Atoma node
 #[derive(Parser)]
 struct Args {
-    /// Index of the address to use from the keystore
-    #[arg(short, long, default_value_t = 0)]
-    address_index: usize,
-
     /// Path to the configuration file
     #[arg(short, long)]
     config_path: String,
@@ -31,6 +29,9 @@ struct Args {
 /// of the Atoma proxy, including the Sui, service, and state manager configurations.
 #[derive(Debug)]
 struct Config {
+    /// Configuration for the Sui component.
+    sui: AtomaSuiConfig,
+    
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
 }
@@ -38,6 +39,7 @@ struct Config {
 impl Config {
     async fn load(path: String) -> Self {
         Self {
+            sui: AtomaSuiConfig::from_file_path(path.clone()),
             state: AtomaStateManagerConfig::from_file_path(path),
         }
     }
@@ -94,11 +96,14 @@ async fn main() {
   let args = Args::parse();
   let config = Config::load(args.config_path).await;
   
+  let (shutdown_sender, shutdown_receiver) = watch::channel(false);
   let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
   let (state_manager_sender, state_manager_receiver) = flume::unbounded();
   
+  let sui_subscriber = atoma_sui::SuiEventSubscriber::new(config.sui, event_subscriber_sender, shutdown_receiver);
+
   // Initialize your StateManager here
-  let state_manager = AtomaStateManager::new_from_url(config.state.database_url, event_subscriber_receiver,state_manager_receiver).await; 
+  let state_manager = AtomaStateManager::new_from_url(config.state.database_url, event_subscriber_receiver, state_manager_receiver).await; 
   if let Err(e) = state_manager {
     dbg!(e);
   }
