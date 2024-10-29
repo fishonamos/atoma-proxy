@@ -1,0 +1,17 @@
+[package]
+name = "atoma-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0.91"
+async-trait = "0.1.83"
+atoma-state.workspace = true
+axum = "0.7.7"
+clap = "4.5.20"
+flume.workspace = true
+sqlx.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json", "time"] }
