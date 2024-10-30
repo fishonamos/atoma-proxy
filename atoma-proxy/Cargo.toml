@@ -14,5 +14,6 @@ clap = "4.5.20"
 flume.workspace = true
 sqlx.workspace = true
 tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json", "time"] }

@@ -551,6 +551,7 @@ dependencies = [
  "flume",
  "sqlx",
  "tokio",
+ "tracing",
  "tracing-appender",
  "tracing-subscriber",
 ]
