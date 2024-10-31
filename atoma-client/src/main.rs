@@ -20,13 +20,13 @@ enum Cmds {
         price: u64,
     },
     SendOpenAiApiRequest {
-        #[arg(short, long)]
+        #[arg(short = 's', long)]
         system_prompt: Option<String>,
-        #[arg(short, long)]
+        #[arg(short = 'u', long)]
         user_prompt: Option<String>,
-        #[arg(short, long)]
+        #[arg(short = 't', long)]
         stream: Option<bool>,
-        #[arg(short, long)]
+        #[arg(short = 'm', long)]
         max_tokens: u64,
     },
 }

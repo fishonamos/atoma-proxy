@@ -5,7 +5,7 @@ use blake2::{
 };
 use config::Config;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{path::Path, time::Duration};
 use sui_keys::keystore::{AccountKeystore, Keystore};
 use sui_sdk::{
@@ -186,11 +186,11 @@ impl AtomaProxy {
         user_prompt: Option<String>,
         stream: Option<bool>,
         max_tokens: u64,
-    ) -> Result<String> {
+    ) -> Result<Value> {
         let active_address = self.wallet_ctx.active_address()?;
         let request = json!(
             {
-                "model": "meta-llama/Meta-Llama-3.2-3B-Instruct",
+                "model": "meta-llama/Llama-3.2-3B-Instruct", // hardcoded for now
                 "messages": [
                     { "role": "system", "content": system_prompt },
                     { "role": "user", "content": user_prompt }
@@ -200,7 +200,7 @@ impl AtomaProxy {
             }
         );
         let mut blake2b = Blake2b::new();
-        blake2b.update(&request.to_string().as_bytes());
+        blake2b.update(request.to_string().as_bytes());
         let hash: GenericArray<u8, U32> = blake2b.finalize();
         let signature = match &self.wallet_ctx.config.keystore {
             Keystore::File(keystore) => keystore.sign_hashed(&active_address, &hash)?,
@@ -215,7 +215,7 @@ impl AtomaProxy {
             .json(&request)
             .send()
             .await?;
-        Ok(response.text().await?)
+        Ok(response.json::<Value>().await?)
     }
 }
 
