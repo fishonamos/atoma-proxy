@@ -12,6 +12,7 @@ async-trait = "0.1.83"
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-sui", branch = "main" }
 sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls"] }
+sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
 thiserror = "1.0.65"
 tokio = "1.41.0"

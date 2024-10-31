@@ -1,12 +1,19 @@
 use anyhow::Result;
+use blake2::{
+    digest::generic_array::{typenum::U32, GenericArray},
+    Blake2b, Digest,
+};
 use config::Config;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{path::Path, time::Duration};
+use sui_keys::keystore::{AccountKeystore, Keystore};
 use sui_sdk::{
     json::SuiJsonValue,
     rpc_types::Page,
     types::{
         base_types::{ObjectID, SuiAddress},
+        crypto::EncodeDecodeBase64,
         SUI_RANDOMNESS_STATE_OBJECT_ID,
     },
     wallet_context::WalletContext,
@@ -29,20 +36,24 @@ const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
 /// A client for interacting with the Atoma network using the Sui blockchain.
 ///
-/// The `AtomaSuiClient` struct provides methods to perform various operations
+/// The `AtomaProxy` struct provides methods to perform various operations
 /// in the Atoma network, such as registering nodes, subscribing to models and tasks,
 /// and managing transactions. It maintains a wallet context and optionally stores
 /// a node badge representing the client's node registration status.
-pub struct AtomaSuiClient {
+pub struct AtomaProxy {
     /// The wallet context used for managing blockchain interactions.
     wallet_ctx: WalletContext,
+
     /// The TOMA wallet object ID
     toma_wallet_id: Option<ObjectID>,
+
+    /// The OpenAI API endpoint
+    openai_api_endpoint: String,
 }
 
-impl AtomaSuiClient {
+impl AtomaProxy {
     /// Constructor
-    pub async fn new(config: AtomaSuiConfig) -> Result<Self> {
+    pub async fn new(config: AtomaProxyConfig) -> Result<Self> {
         let sui_config_path = config.sui_config_path.clone();
         let sui_config_path = Path::new(&sui_config_path);
         let wallet_ctx = WalletContext::new(
@@ -54,6 +65,7 @@ impl AtomaSuiClient {
         Ok(Self {
             wallet_ctx,
             toma_wallet_id: None,
+            openai_api_endpoint: config.openai_api_endpoint,
         })
     }
 
@@ -121,7 +133,7 @@ impl AtomaSuiClient {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// let mut client = AtomaSuiClient::new(config).await?;
+    /// let mut client = AtomaProxy::new(config).await?;
     /// let toma_wallet_id = client.get_or_load_toma_wallet_object_id().await?;
     /// ```
     #[instrument(level = "info", skip_all, fields(
@@ -146,6 +158,64 @@ impl AtomaSuiClient {
                 anyhow::bail!("No TOMA wallet found")
             }
         }
+    }
+
+    /// Send a request to an OpenAI API node
+    ///
+    /// # Arguments
+    ///
+    /// * `system_prompt` - The system prompt
+    /// * `user_prompt` - The user prompt
+    /// * `stream` - Whether to stream the response
+    /// * `max_tokens` - The maximum number of tokens in the response
+    ///
+    /// # Returns
+    ///
+    /// Returns the response from the OpenAI API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request to the OpenAI API fails.
+    #[instrument(level = "info", skip_all, fields(
+        endpoint = "send_openai_api_request",
+        address = %self.wallet_ctx.active_address().unwrap()
+    ))]
+    pub async fn send_openai_api_request(
+        &mut self,
+        system_prompt: Option<String>,
+        user_prompt: Option<String>,
+        stream: Option<bool>,
+        max_tokens: u64,
+    ) -> Result<String> {
+        let active_address = self.wallet_ctx.active_address()?;
+        let request = json!(
+            {
+                "model": "meta-llama/Meta-Llama-3.2-3B-Instruct",
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": user_prompt }
+                ],
+                "stream": stream,
+                "max_tokens": max_tokens,
+            }
+        );
+        let mut blake2b = Blake2b::new();
+        blake2b.update(&request.to_string().as_bytes());
+        let hash: GenericArray<u8, U32> = blake2b.finalize();
+        let signature = match &self.wallet_ctx.config.keystore {
+            Keystore::File(keystore) => keystore.sign_hashed(&active_address, &hash)?,
+            Keystore::InMem(keystore) => keystore.sign_hashed(&active_address, &hash)?,
+        };
+        let base64_signature = signature.encode_base64();
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.openai_api_endpoint)
+            .header("X-Signature", base64_signature)
+            .json(&request)
+            .send()
+            .await?;
+        Ok(response.text().await?)
     }
 }
 
@@ -195,7 +265,7 @@ async fn find_toma_token_wallet(
 /// This struct holds the necessary configuration parameters for connecting to and
 /// interacting with a Sui network, including URLs, package ID, timeout, and small IDs.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AtomaSuiConfig {
+pub struct AtomaProxyConfig {
     /// The timeout duration for requests
     /// This sets the maximum time to wait for a response from the Sui network
     request_timeout: Option<Duration>,
@@ -205,10 +275,13 @@ pub struct AtomaSuiConfig {
 
     /// Sui's config path
     sui_config_path: String,
+
+    /// The OpenAI API endpoint
+    openai_api_endpoint: String,
 }
 
-impl AtomaSuiConfig {
-    /// Constructs a new `AtomaSuiConfig` instance from a configuration file path.
+impl AtomaProxyConfig {
+    /// Constructs a new `AtomaProxyConfig` instance from a configuration file path.
     ///
     /// # Arguments
     ///
