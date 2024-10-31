@@ -539,6 +539,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoma-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "config",
+ "serde",
+ "sui-sdk",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "atoma-proxy"
 version = "0.1.0"
 dependencies = [
