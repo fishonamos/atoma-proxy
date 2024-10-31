@@ -41,16 +41,17 @@ impl AtomaStateManager {
         }
     }
 
-    async fn create_database_if_not_exists(db_url:&str, db_name: &str) -> Result<()> {
+    async fn create_database_if_not_exists(db_url: &str, db_name: &str) -> Result<()> {
         // Connect to the PostgreSQL server (default database)
         let pool: PgPool = PgPool::connect(db_url).await?;
-      
+
         // Check if the database exists
-        let exists: (bool,) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)")
-            .bind(db_name)
-            .fetch_one(&pool)
-            .await?;
-      
+        let exists: (bool,) =
+            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)")
+                .bind(db_name)
+                .fetch_one(&pool)
+                .await?;
+
         // Create the database if it does not exist
         if !exists.0 {
             sqlx::query(&format!("CREATE DATABASE {}", db_name))
@@ -60,11 +61,9 @@ impl AtomaStateManager {
         } else {
             println!("Database '{}' already exists.", db_name);
         }
-      
+
         Ok(())
-      }
-      
-      
+    }
 
     /// Creates a new `AtomaStateManager` instance from a database URL.
     ///
@@ -325,7 +324,6 @@ impl AtomaState {
         .await?;
         Ok(())
     }
-    
 
     /// Deprecates a task in the database based on its small ID.
     ///
@@ -2093,7 +2091,7 @@ impl AtomaState {
         Ok(())
     }
 
-    pub async fn store_node_public_address(&self, small_id: i64, address:String) -> Result<()> {
+    pub async fn store_node_public_address(&self, small_id: i64, address: String) -> Result<()> {
         sqlx::query("INSERT INTO node_public_addresses (node_small_id, public_address) VALUES ($1, $2) ON CONFLICT (node_small_id) DO UPDATE SET public_address = EXCLUDED.public_address")
             .bind(small_id)
             .bind(address)
@@ -2248,12 +2246,16 @@ pub(crate) mod queries {
                 num_total_messages INTEGER NOT NULL,
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
             );").execute(db).await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);")
-            .execute(db)
-            .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_stacks_stack_small_id ON stacks (stack_small_id);")
-            .execute(db)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);",
+        )
+        .execute(db)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_stacks_stack_small_id ON stacks (stack_small_id);",
+        )
+        .execute(db)
+        .await?;
         Ok(())
     }
 
@@ -2344,39 +2346,39 @@ pub(crate) mod queries {
     }
 
     /// Creates the `nodes_public_addresses` table in the database.
-    /// 
+    ///
     /// This table stores the public addresses of nodes in the system.
     /// - `node_small_id`: INTEGER PRIMARY KEY - The unique identifier for the node.
     /// - `public_address`: TEXT NOT NULL - The public address of the node.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `db` - A reference to the Postgres database pool.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Returns `Ok(())` if the table is created successfully, or an error if any operation fails.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function will return an error if the SQL query fails to execute.
     /// Possible reasons for failure include:
     /// - Database connection issues
     /// - Insufficient permissions
     /// - Syntax errors in the SQL query
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust,ignore
     /// use sqlx::PgPool;
     /// use atoma_node::atoma_state::queries;
-    /// 
+    ///
     /// async fn setup_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     ///     queries::create_nodes_public_addresses(pool).await?;
     ///     Ok(())
     /// }
     /// ```
-    pub (crate) async fn create_nodes_public_addresses(db: &PgPool) -> Result<()> {
+    pub(crate) async fn create_nodes_public_addresses(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_public_addresses (
                 node_small_id INTEGER PRIMARY KEY,

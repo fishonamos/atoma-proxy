@@ -1,4 +1,4 @@
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use atoma_state::AtomaStateManager;
 use atoma_sui::client::AtomaSuiClient;
@@ -16,7 +16,7 @@ const NODE_PUBLIC_ADDRESS_REGISTRATION: &str = "/node/registration";
 
 #[derive(Clone)]
 pub struct ProxyState {
-    pub client: Arc<RwLock<AtomaSuiClient>>,
+    pub _client: Arc<RwLock<AtomaSuiClient>>,
     pub state: Arc<RwLock<AtomaStateManager>>,
 }
 
@@ -46,7 +46,7 @@ pub async fn node_public_address_registration(
         .store_node_public_address(payload.node_small_id as i64, payload.public_address)
         .await
         .map_err(|e| {
-          dbg!(e);
+            dbg!(e);
             error!("Failed to submit node task subscription tx");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
@@ -63,7 +63,7 @@ pub async fn start_server(
         .unwrap();
 
     let proxy_state = ProxyState {
-        client: Arc::new(RwLock::new(atoma_sui_client)),
+        _client: Arc::new(RwLock::new(atoma_sui_client)),
         state: Arc::new(RwLock::new(state_manager)),
     };
     let router = Router::new()

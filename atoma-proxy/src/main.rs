@@ -1,4 +1,4 @@
-use std::{path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
@@ -102,8 +102,6 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
     Ok(())
 }
 
-
-
 #[tokio::main]
 async fn main() {
     setup_logging(LOGS)
@@ -116,8 +114,11 @@ async fn main() {
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (_state_manager_sender, state_manager_receiver) = flume::unbounded();
 
-    let sui_subscriber =
-        atoma_sui::SuiEventSubscriber::new(config.sui.clone(), event_subscriber_sender, shutdown_receiver);
+    let sui_subscriber = atoma_sui::SuiEventSubscriber::new(
+        config.sui.clone(),
+        event_subscriber_sender,
+        shutdown_receiver,
+    );
 
     // Initialize your StateManager here
     let state_manager = AtomaStateManager::new_from_url(
@@ -125,8 +126,9 @@ async fn main() {
         event_subscriber_receiver,
         state_manager_receiver,
     )
-    .await.unwrap();
-    
+    .await
+    .unwrap();
+
     let sui_subscriber_handle = tokio::spawn(async move {
         sui_subscriber.run().await.unwrap();
     });
