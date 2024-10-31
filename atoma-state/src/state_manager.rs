@@ -2091,12 +2091,45 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Stores the public address of a node in the database.
+    ///
+    /// This method inserts or updates the public address of a node in the `node_public_addresses` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `small_id` - The unique small identifier of the node.
+    /// * `address` - The public address of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn store_address(state_manager: &AtomaStateManager, small_id: i64, address: String) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.store_node_public_address(small_id, address).await
+    /// }
+    /// ```
     pub async fn store_node_public_address(&self, small_id: i64, address: String) -> Result<()> {
-        sqlx::query("INSERT INTO node_public_addresses (node_small_id, public_address) VALUES ($1, $2) ON CONFLICT (node_small_id) DO UPDATE SET public_address = EXCLUDED.public_address")
-            .bind(small_id)
-            .bind(address)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "INSERT INTO node_public_addresses 
+                    (node_small_id, public_address) 
+                    VALUES ($1, $2) 
+                    ON CONFLICT (node_small_id)
+                    DO UPDATE SET public_address = EXCLUDED.public_address",
+        )
+        .bind(small_id)
+        .bind(address)
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 }
