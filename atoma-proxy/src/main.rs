@@ -2,13 +2,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
-use atoma_sui::{client::AtomaSuiClient, AtomaSuiConfig};
+use atoma_sui::AtomaSuiConfig;
 use clap::Parser;
 use server::{start_server, AtomaServiceConfig};
 use sui::Sui;
-use sui_keys::keystore::FileBasedKeystore;
-use sui_sdk::wallet_context::WalletContext;
 use tokio::{sync::watch, try_join};
+use tracing::{error, instrument};
 use tracing_appender::{
     non_blocking,
     rolling::{RollingFileAppender, Rotation},
@@ -107,10 +106,8 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
 }
 
 #[tokio::main]
-async fn main() {
-    setup_logging(LOGS)
-        .context("Failed to setup logging")
-        .unwrap();
+async fn main() -> Result<()> {
+    setup_logging(LOGS).context("Failed to setup logging")?;
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
 
@@ -130,22 +127,66 @@ async fn main() {
         event_subscriber_receiver,
         state_manager_receiver,
     )
-    .await
-    .unwrap();
+    .await?;
 
     let shutdown_receiver_clone = shutdown_receiver.clone();
     let state_manager_handle = tokio::spawn(async move {
-        state_manager.run(shutdown_receiver_clone).await.unwrap();
+        Ok::<(), anyhow::Error>(state_manager.run(shutdown_receiver_clone).await?)
     });
 
-    let sui_subscriber_handle = tokio::spawn(async move {
-        sui_subscriber.run().await.unwrap();
-    });
+    let sui_subscriber_handle =
+        tokio::spawn(async move { Ok::<(), anyhow::Error>(sui_subscriber.run().await?) });
     let server_handle = tokio::spawn(async move {
-        let atoma_sui_client = AtomaSuiClient::new(config.sui.clone()).await.unwrap();
-        let sui = Sui::new(&config.sui).await.unwrap();
-        start_server(config.service, atoma_sui_client, state_manager_sender, sui).await;
+        let sui = Sui::new(&config.sui).await?;
+        start_server(config.service, state_manager_sender, sui).await
     });
 
-    try_join!(sui_subscriber_handle, server_handle, state_manager_handle).unwrap();
+    let (sui_subscriber_result, server_result, state_manager_result) =
+        try_join!(sui_subscriber_handle, server_handle, state_manager_handle)?;
+
+    handle_tasks_results(sui_subscriber_result, state_manager_result, server_result)?;
+    Ok(())
+}
+
+/// Handles the results of various tasks (subscriber, state manager, and server).
+///
+/// This function checks the results of the subscriber, state manager, and server tasks.
+/// If any of the tasks return an error, it logs the error and returns it.
+/// This is useful for ensuring that the application can gracefully handle failures
+/// in any of its components and provide appropriate logging for debugging.
+///
+/// # Arguments
+///
+/// * `subscriber_result` - The result of the subscriber task, which may contain an error.
+/// * `state_manager_result` - The result of the state manager task, which may contain an error.
+/// * `server_result` - The result of the server task, which may contain an error.
+///
+/// # Returns
+///
+/// Returns a `Result<()>`, which is `Ok(())` if all tasks succeeded, or an error if any task failed.
+#[instrument(
+    level = "info",
+    skip(sui_subscriber_result, state_manager_result, server_result)
+)]
+fn handle_tasks_results(
+    sui_subscriber_result: Result<()>,
+    state_manager_result: Result<()>,
+    server_result: Result<()>,
+) -> Result<()> {
+    let result_handler = |result: Result<()>, message: &str| {
+        if let Err(e) = result {
+            error!(
+                target = "atoma-node-service",
+                event = "atoma_node_service_shutdown",
+                error = ?e,
+                "{message}"
+            );
+            return Err(e);
+        }
+        Ok(())
+    };
+    result_handler(sui_subscriber_result, "Subscriber terminated abruptly")?;
+    result_handler(state_manager_result, "State manager terminated abruptly")?;
+    result_handler(server_result, "Server terminated abruptly")?;
+    Ok(())
 }

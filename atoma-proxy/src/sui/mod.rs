@@ -11,32 +11,32 @@ use sui_keys::keystore::{AccountKeystore, Keystore};
 use sui_sdk::{
     json::SuiJsonValue,
     rpc_types::Page,
-    types::{
-        base_types::{ObjectID, SuiAddress},
-        crypto::EncodeDecodeBase64,
-        SUI_RANDOMNESS_STATE_OBJECT_ID,
-    },
+    types::{base_types::ObjectID, crypto::EncodeDecodeBase64, SUI_RANDOMNESS_STATE_OBJECT_ID},
     wallet_context::WalletContext,
-    SuiClient,
 };
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
+/// The Sui client
+///
+/// This struct is used to interact with the Sui contract.
 pub struct Sui {
+    /// Sui wallet context
     wallet_ctx: WalletContext,
+    /// TOMA wallet object ID
     toma_wallet_id: Option<ObjectID>,
+    /// Atoma package object ID
     atoma_package_id: ObjectID,
+    /// Atoma DB object ID
     atoma_db_id: ObjectID,
+    /// TOMA package object ID
     toma_package_id: ObjectID,
 }
 
 impl Sui {
     /// Constructor
     pub async fn new(sui_config: &AtomaSuiConfig) -> Result<Self> {
-        // let keystore = FileBasedKeystore::new(&config.sui.sui_keystore_path().into())
-        //     .context("Failed to initialize keystore")
-        //     .expect("Failed to initialize keystore");
         let sui_config_path = sui_config.sui_config_path();
         let sui_config_path = Path::new(&sui_config_path);
         let wallet_ctx = WalletContext::new(
@@ -54,6 +54,21 @@ impl Sui {
         })
     }
 
+    /// Acquire a new stack entry
+    ///
+    /// # Arguments
+    ///
+    /// * `task_small_id` - The task small ID for which to acquire a new stack entry.
+    /// * `num_compute_units` - The number of compute units to acquire.
+    /// * `price` - The price per compute unit.
+    ///
+    /// # Returns
+    ///
+    /// Returns the selected node ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transaction fails.
     #[instrument(level = "info", skip_all, fields(
       endpoint = "acquire_new_stack_entry",
       address = %self.wallet_ctx.active_address().unwrap()
@@ -63,7 +78,7 @@ impl Sui {
         task_small_id: u64,
         num_compute_units: u64,
         price: u64,
-    ) -> Result<i64> {
+    ) -> Result<u64> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
         let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
@@ -105,7 +120,8 @@ impl Sui {
                     event
                         .parsed_json
                         .get("selected_node_id")
-                        .and_then(|node_id| node_id.as_i64())
+                        .and_then(|node_id| node_id.as_str())
+                        .and_then(|node_id| node_id.parse::<u64>().ok())
                 })
             })
             .ok_or_else(|| anyhow::anyhow!("No node was selected"))
@@ -148,12 +164,11 @@ impl Sui {
         }
     }
 
-    /// Send a request to an OpenAI API node
+    /// Sign the openai request.
     ///
     /// # Arguments
     ///
-    /// * `request` - The openai request to send to the OpenAI API.
-    /// * `endpoint` - The endpoint to send the request to.
+    /// * `request` - The openai request that needs to be signed.
     ///
     /// # Returns
     ///
@@ -161,16 +176,12 @@ impl Sui {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request to the OpenAI API fails.
+    /// Returns an error if it fails to get the active address.
     #[instrument(level = "info", skip_all, fields(
-      endpoint = "send_openai_api_request",
+      endpoint = "get_sui_signature",
       address = %self.wallet_ctx.active_address().unwrap()
-  ))]
-    pub async fn send_openai_api_request(
-        &mut self,
-        request: Value,
-        node_address: String,
-    ) -> Result<Value> {
+    ))]
+    pub fn get_sui_signature(&mut self, request: &Value) -> Result<String> {
         let active_address = self.wallet_ctx.active_address()?;
         let mut blake2b = Blake2b::new();
         blake2b.update(request.to_string().as_bytes());
@@ -179,16 +190,7 @@ impl Sui {
             Keystore::File(keystore) => keystore.sign_hashed(&active_address, &hash)?,
             Keystore::InMem(keystore) => keystore.sign_hashed(&active_address, &hash)?,
         };
-        let base64_signature = signature.encode_base64();
-
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&node_address)
-            .header("X-Signature", base64_signature)
-            .json(&request)
-            .send()
-            .await?;
-        Ok(response.json::<Value>().await?)
+        Ok(signature.encode_base64())
     }
 
     /// Find the TOMA token wallet for the given address
@@ -221,6 +223,7 @@ impl Sui {
             .max_by_key(|coin| coin.balance)
             .map(|coin| coin.coin_object_id)
             .ok_or_else(|| {
+                error!("No TOMA coins found for {active_address}");
                 anyhow::anyhow!(
                     "No TOMA coins for {active_address}. \
                     Have you just received them? \

@@ -15,7 +15,7 @@ pub struct Task {
     /// Unique string identifier for the task
     pub task_id: String,
     /// Role associated with the task (encoded as an integer)
-    pub role: i64,
+    pub role: i16,
     /// Optional name of the model used for the task
     pub model_name: Option<String>,
     /// Indicates whether the task is deprecated
@@ -25,7 +25,7 @@ pub struct Task {
     /// Optional epoch timestamp when the task was deprecated
     pub deprecated_at_epoch: Option<i64>,
     /// Security level of the task (encoded as an integer)
-    pub security_level: i64,
+    pub security_level: i32,
     /// Optional minimum reputation score required for the task
     pub minimum_reputation_score: Option<i64>,
 }
@@ -35,12 +35,12 @@ impl From<TaskRegisteredEvent> for Task {
         Task {
             task_id: event.task_id,
             task_small_id: event.task_small_id.inner as i64,
-            role: event.role.inner as i64,
+            role: event.role.inner as i16,
             model_name: event.model_name,
             is_deprecated: false,
             valid_until_epoch: None,
             deprecated_at_epoch: None,
-            security_level: event.security_level.inner as i64,
+            security_level: event.security_level.inner as i32,
             minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
         }
     }
@@ -60,11 +60,11 @@ pub struct Stack {
     /// Identifier of the selected node for computation
     pub selected_node_id: i64,
     /// Total number of compute units in this stack
-    pub num_compute_units: i32,
+    pub num_compute_units: i64,
     /// Price of the stack (likely in smallest currency unit)
-    pub price: i32,
+    pub price: i64,
     /// Number of compute units already processed
-    pub already_computed_units: i32,
+    pub already_computed_units: i64,
     /// Indicates whether the stack is currently in the settle period
     pub in_settle_period: bool,
     /// Joint concatenation of Blake2b hashes of each payload and response pairs that was already processed
@@ -82,8 +82,8 @@ impl From<StackCreatedEvent> for Stack {
             stack_small_id: event.stack_small_id.inner as i64,
             task_small_id: event.task_small_id.inner as i64,
             selected_node_id: event.selected_node_id.inner as i64,
-            num_compute_units: event.num_compute_units as i32,
-            price: event.price as i32,
+            num_compute_units: event.num_compute_units as i64,
+            price: event.price as i64,
             already_computed_units: 0,
             in_settle_period: false,
             total_hash: vec![],
@@ -232,7 +232,7 @@ pub enum AtomaAtomaStateManagerEvent {
         model: String,
         result_sender: oneshot::Sender<Result<Vec<Task>>>,
     },
-    UpdateNodePublicAddress {
+    UpsertNodePublicAddress {
         node_small_id: i64,
         public_address: String,
     },

@@ -10,17 +10,17 @@ async-trait.workspace = true
 atoma-state.workspace = true
 atoma-sui.workspace = true
 axum.workspace = true
+blake2.workspace = true
 clap.workspace = true
 config.workspace = true
 flume.workspace = true
+reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx.workspace = true
+sui-keys.workspace = true
+sui-sdk.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing-appender.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "json", "time"] }
 tracing.workspace = true
-sui-keys.workspace = true
-sui-sdk.workspace = true
-blake2 = "0.10.6"
-reqwest = "0.12.9"

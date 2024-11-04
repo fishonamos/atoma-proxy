@@ -353,11 +353,6 @@ pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
 ) -> Result<()> {
-    trace!(
-        target = "atoma-state-handlers",
-        event = "handle-stack-created-event",
-        "Processing stack created event"
-    );
     let node_small_id = event.selected_node_id.inner;
     trace!(
         target = "atoma-state-handlers",
@@ -628,11 +623,6 @@ pub(crate) async fn handle_state_manager_event(
     state_manager: &AtomaStateManager,
     event: AtomaAtomaStateManagerEvent,
 ) -> Result<()> {
-    trace!(
-        target = "atoma-state-handlers",
-        event = "handle-state-manager-event",
-        "Processing state manager event"
-    );
     match event {
         AtomaAtomaStateManagerEvent::GetAvailableStackWithComputeUnits {
             stack_small_id,
@@ -640,6 +630,12 @@ pub(crate) async fn handle_state_manager_event(
             total_num_tokens,
             result_sender,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting available stack with compute units for stack with id: {}",
+                stack_small_id
+            );
             let result = state_manager
                 .state
                 .get_available_stack_with_compute_units(
@@ -657,6 +653,12 @@ pub(crate) async fn handle_state_manager_event(
             estimated_total_tokens,
             total_tokens,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Updating stack num tokens for stack with id: {}",
+                stack_small_id
+            );
             state_manager
                 .state
                 .update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens)
@@ -666,6 +668,12 @@ pub(crate) async fn handle_state_manager_event(
             stack_small_id,
             total_hash,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Updating stack total hash for stack with id: {}",
+                stack_small_id
+            );
             state_manager
                 .state
                 .update_stack_total_hash(stack_small_id, total_hash)
@@ -676,6 +684,13 @@ pub(crate) async fn handle_state_manager_event(
             free_compute_units,
             result_sender,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting stacks for model: {} with free compute units: {}",
+                model,
+                free_compute_units
+            );
             let stacks = state_manager
                 .state
                 .get_stacks_for_model(&model, free_compute_units)
@@ -688,15 +703,27 @@ pub(crate) async fn handle_state_manager_event(
             model,
             result_sender,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting tasks for model: {}",
+                model
+            );
             let tasks = state_manager.state.get_tasks_for_model(&model).await;
             result_sender
                 .send(tasks)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
-        AtomaAtomaStateManagerEvent::UpdateNodePublicAddress {
+        AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id,
             public_address,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Upserting public address for node with id: {}",
+                node_small_id
+            );
             state_manager
                 .state
                 .update_node_public_address(node_small_id, public_address)
@@ -706,6 +733,12 @@ pub(crate) async fn handle_state_manager_event(
             node_small_id,
             result_sender,
         } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting public address for node with id: {}",
+                node_small_id
+            );
             let public_address = state_manager
                 .state
                 .get_node_public_address(node_small_id)

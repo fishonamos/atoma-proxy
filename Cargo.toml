@@ -12,9 +12,11 @@ async-trait = "0.1.83"
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-sui", branch = "temp" }
 axum = "0.7.7"
+blake2 = "0.10.6"
 clap = "4.5.20"
 config = "0.14.1"
 flume = "0.11.1"
+reqwest = "0.12.9"
 serde = "1.0.214"
 serde_json = "1.0.132"
 sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls"] }

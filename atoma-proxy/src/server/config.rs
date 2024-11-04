@@ -14,6 +14,11 @@ pub struct AtomaServiceConfig {
     ///
     /// This field specifies the address and port on which the Atoma Proxy Server will bind.
     pub service_bind_address: String,
+
+    /// Password for the Atoma Proxy Service.
+    ///
+    /// This password is used to authenticate requests to the Atoma Proxy Service.
+    pub password: String,
 }
 
 impl AtomaServiceConfig {
