@@ -69,10 +69,7 @@ impl Sui {
     /// # Errors
     ///
     /// Returns an error if the transaction fails.
-    #[instrument(level = "info", skip_all, fields(
-      endpoint = "acquire_new_stack_entry",
-      address = %self.wallet_ctx.active_address().unwrap()
-    ))]
+    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
     pub async fn acquire_new_stack_entry(
         &mut self,
         task_small_id: u64,
@@ -146,10 +143,7 @@ impl Sui {
     /// let mut client = AtomaProxy::new(config).await?;
     /// let toma_wallet_id = client.get_or_load_toma_wallet_object_id().await?;
     /// ```
-    #[instrument(level = "info", skip_all, fields(
-      endpoint = "get_or_load_toma_wallet_object_id",
-      address = %self.wallet_ctx.active_address().unwrap()
-    ))]
+    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
     pub async fn get_or_load_toma_wallet_object_id(&mut self) -> Result<ObjectID> {
         if let Some(toma_wallet_id) = self.toma_wallet_id {
             Ok(toma_wallet_id)
@@ -177,10 +171,7 @@ impl Sui {
     /// # Errors
     ///
     /// Returns an error if it fails to get the active address.
-    #[instrument(level = "info", skip_all, fields(
-      endpoint = "get_sui_signature",
-      address = %self.wallet_ctx.active_address().unwrap()
-    ))]
+    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
     pub fn get_sui_signature(&mut self, request: &Value) -> Result<String> {
         let active_address = self.wallet_ctx.active_address()?;
         let mut blake2b = Blake2b::new();
@@ -202,10 +193,7 @@ impl Sui {
     /// # Errors
     ///
     /// Returns an error if no TOMA wallet is found for the active address.
-    #[instrument(level = "info", skip_all, fields(
-      endpoint = "find_toma_token_wallet",
-      address = %self.wallet_ctx.active_address().unwrap()
-    ))]
+    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
     async fn find_toma_token_wallet(&mut self, toma_package: ObjectID) -> Result<ObjectID> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;

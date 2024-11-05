@@ -164,10 +164,7 @@ async fn main() -> Result<()> {
 /// # Returns
 ///
 /// Returns a `Result<()>`, which is `Ok(())` if all tasks succeeded, or an error if any task failed.
-#[instrument(
-    level = "info",
-    skip(sui_subscriber_result, state_manager_result, server_result)
-)]
+#[instrument(level = "info", skip_all)]
 fn handle_tasks_results(
     sui_subscriber_result: Result<()>,
     state_manager_result: Result<()>,
