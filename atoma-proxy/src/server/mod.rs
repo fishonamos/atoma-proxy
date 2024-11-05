@@ -15,7 +15,7 @@ use tokio::{
     net::TcpListener,
     sync::{oneshot, RwLock},
 };
-use tracing::error;
+use tracing::{error, instrument};
 
 mod config;
 pub use config::AtomaServiceConfig;
@@ -76,7 +76,7 @@ pub struct ProxyState {
 /// assert_eq!(check_auth(password, &headers), true);
 /// assert_eq!(check_auth("wrong_password", &headers), false);
 /// ```
-
+#[instrument(level = "info", skip_all, fields(endpoint = "check_auth"))]
 fn check_auth(password: &str, headers: &HeaderMap) -> bool {
     if let Some(auth) = headers.get("Authorization") {
         if let Ok(auth) = auth.to_str() {
@@ -113,6 +113,10 @@ fn check_auth(password: &str, headers: &HeaderMap) -> bool {
 /// # Errors
 ///
 /// Returns an error status code if the authentication fails, the model is not found, no tasks are found for the model, no node address is found, or an internal server error occurs.
+#[instrument(level = "info", skip_all, fields(
+    endpoint = "chat_completions_handler",
+    payload = ?payload,
+))]
 pub async fn chat_completions_handler(
     State(state): State<ProxyState>,
     headers: HeaderMap,
@@ -189,6 +193,10 @@ pub async fn chat_completions_handler(
         .map(|response| Json(response))
 }
 
+#[instrument(level = "info", skip_all, fields(
+    endpoint = "get_selected_node",
+    model = %model,
+))]
 async fn get_selected_node(
     model: String,
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
@@ -268,7 +276,10 @@ pub struct NodePublicAddressAssignment {
     public_address: String,
 }
 
-#[axum::debug_handler]
+#[instrument(level = "info", skip_all, fields(
+    endpoint = "node_public_address_registration",
+    payload = ?payload,
+))]
 pub async fn node_public_address_registration(
     State(state): State<ProxyState>,
     Json(payload): Json<NodePublicAddressAssignment>,
@@ -301,6 +312,10 @@ pub async fn node_public_address_registration(
 /// # Errors
 ///
 /// Returns an error if the tcp listener fails to bind or the server fails to start.
+#[instrument(level = "info", skip_all, fields(
+    endpoint = "start_server",
+    service_bind_address = %config.service_bind_address,
+))]
 pub async fn start_server(
     config: AtomaServiceConfig,
     state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
