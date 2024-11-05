@@ -15,7 +15,7 @@ pub struct Task {
     /// Unique string identifier for the task
     pub task_id: String,
     /// Role associated with the task (encoded as an integer)
-    pub role: i64,
+    pub role: i16,
     /// Optional name of the model used for the task
     pub model_name: Option<String>,
     /// Indicates whether the task is deprecated
@@ -25,7 +25,7 @@ pub struct Task {
     /// Optional epoch timestamp when the task was deprecated
     pub deprecated_at_epoch: Option<i64>,
     /// Security level of the task (encoded as an integer)
-    pub security_level: i64,
+    pub security_level: i32,
     /// Optional minimum reputation score required for the task
     pub minimum_reputation_score: Option<i64>,
 }
@@ -35,12 +35,12 @@ impl From<TaskRegisteredEvent> for Task {
         Task {
             task_id: event.task_id,
             task_small_id: event.task_small_id.inner as i64,
-            role: event.role.inner as i64,
+            role: event.role.inner as i16,
             model_name: event.model_name,
             is_deprecated: false,
             valid_until_epoch: None,
             deprecated_at_epoch: None,
-            security_level: event.security_level.inner as i64,
+            security_level: event.security_level.inner as i32,
             minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
         }
     }
@@ -50,7 +50,7 @@ impl From<TaskRegisteredEvent> for Task {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Stack {
     /// Address of the owner of the stack
-    pub owner_address: String,
+    pub owner: String,
     /// Unique small integer identifier for the stack
     pub stack_small_id: i64,
     /// Unique string identifier for the stack
@@ -71,13 +71,13 @@ pub struct Stack {
     /// by the node for this stack.
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
-    pub num_total_messages: i64,
+    pub num_total_messages: i32,
 }
 
 impl From<StackCreatedEvent> for Stack {
     fn from(event: StackCreatedEvent) -> Self {
         Stack {
-            owner_address: event.owner_address,
+            owner: event.owner,
             stack_id: event.stack_id,
             stack_small_id: event.stack_small_id.inner as i64,
             task_small_id: event.task_small_id.inner as i64,
@@ -222,5 +222,22 @@ pub enum AtomaAtomaStateManagerEvent {
         total_num_tokens: i64,
         /// Oneshot channel to send the result back to the sender channel
         result_sender: oneshot::Sender<Result<Option<Stack>>>,
+    },
+    GetStacksForModel {
+        model: String,
+        free_compute_units: i32,
+        result_sender: oneshot::Sender<Result<Vec<Stack>>>,
+    },
+    GetTasksForModel {
+        model: String,
+        result_sender: oneshot::Sender<Result<Vec<Task>>>,
+    },
+    UpsertNodePublicAddress {
+        node_small_id: i64,
+        public_address: String,
+    },
+    GetNodePublicAddress {
+        node_small_id: i64,
+        result_sender: oneshot::Sender<Result<Option<String>>>,
     },
 }

@@ -11,6 +11,7 @@ use sqlx::PgPool;
 use sqlx::{FromRow, Row};
 use thiserror::Error;
 use tokio::sync::watch::Receiver;
+use tracing::instrument;
 
 pub(crate) type Result<T> = std::result::Result<T, AtomaStateManagerError>;
 
@@ -112,7 +113,7 @@ impl AtomaStateManager {
     ///     state_manager.run(shutdown_rx).await
     /// }
     /// ```
-    #[tracing::instrument(level = "trace", skip_all)]
+    #[instrument(level = "trace", skip_all)]
     pub async fn run(self, mut shutdown_signal: Receiver<bool>) -> Result<()> {
         loop {
             tokio::select! {
@@ -223,17 +224,78 @@ impl AtomaState {
     /// # Errors
     ///
     /// This function will return an error if the database query fails.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(task_small_id = %task_small_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%task_small_id))]
     pub async fn get_task_by_small_id(&self, task_small_id: i64) -> Result<Task> {
         let task = sqlx::query("SELECT * FROM tasks WHERE task_small_id = $1")
             .bind(task_small_id)
             .fetch_one(&self.db)
             .await?;
         Ok(Task::from_row(&task)?)
+    }
+
+    /// Get a stack by its unique identifier.
+    ///
+    /// This method fetches a stack from the database based on the provided `model` and `free_units`.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model name for the task.
+    /// * `free_units` - The number of free units available.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///  - `Ok(Vec<Stack>)`: A vector of stacks for the given model with available free units.
+    ///  - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails.
+    #[instrument(level = "trace", skip_all, fields(%model, %free_units))]
+    pub async fn get_stacks_for_model(&self, model: &str, free_units: i32) -> Result<Vec<Stack>> {
+        // TODO: filter also by security level and other constraints
+        let tasks = sqlx::query(
+            "SELECT stacks.* FROM stacks
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id 
+                WHERE tasks.model_name = $1 AND stacks.num_compute_units - stacks.already_computed_units >= $2")
+        .bind(model)
+        .bind(free_units)
+        .fetch_all(&self.db).await?;
+        tasks
+            .into_iter()
+            .map(|task| Stack::from_row(&task).map_err(AtomaStateManagerError::from))
+            .collect()
+    }
+
+    /// Get tasks for model.
+    ///
+    /// This method fetches all tasks from the database that are associated with
+    /// the given model through the `tasks` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model name for the task.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Task>>`: A result containing either:
+    ///  - `Ok(Vec<Task>)`: A vector of `Task` objects representing all tasks for the given model.
+    ///  - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails.
+    #[instrument(level = "trace", skip_all, fields(%model))]
+    pub async fn get_tasks_for_model(&self, model: &str) -> Result<Vec<Task>> {
+        let tasks = sqlx::query("SELECT * FROM tasks WHERE model_name = $1 AND is_deprecated = $2")
+            .bind(model)
+            .bind(false)
+            .fetch_all(&self.db)
+            .await?;
+        tasks
+            .into_iter()
+            .map(|task| Task::from_row(&task).map_err(AtomaStateManagerError::from))
+            .collect()
     }
 
     /// Retrieves all tasks from the database.
@@ -261,7 +323,7 @@ impl AtomaState {
     ///     state_manager.get_all_tasks().await
     /// }
     /// ```
-    #[tracing::instrument(level = "trace", skip_all, fields(function = "get_all_tasks"))]
+    #[instrument(level = "trace", skip_all)]
     pub async fn get_all_tasks(&self) -> Result<Vec<Task>> {
         let tasks = sqlx::query("SELECT * FROM tasks")
             .fetch_all(&self.db)
@@ -300,11 +362,7 @@ impl AtomaState {
     ///     state_manager.insert_new_task(task).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(task_id = %task.task_small_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(task_id = %task.task_small_id))]
     pub async fn insert_new_task(&self, task: Task) -> Result<()> {
         sqlx::query(
             "INSERT INTO tasks (
@@ -353,11 +411,7 @@ impl AtomaState {
     ///     state_manager.deprecate_task(task_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(task_small_id = %task_small_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%task_small_id))]
     pub async fn deprecate_task(&self, task_small_id: i64, epoch: i64) -> Result<()> {
         sqlx::query("UPDATE tasks SET is_deprecated = TRUE, deprecated_at_epoch = $1 WHERE task_small_id = $2")
             .bind(epoch)
@@ -397,11 +451,7 @@ impl AtomaState {
     ///     state_manager.get_subscribed_tasks(node_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_id = %node_small_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%node_small_id))]
     pub async fn get_subscribed_tasks(&self, node_small_id: i64) -> Result<Vec<Task>> {
         let tasks = sqlx::query(
             "SELECT tasks.* FROM tasks
@@ -448,11 +498,7 @@ impl AtomaState {
     ///     state_manager.get_all_node_subscriptions(&node_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_ids = ?node_small_ids)
-    )]
+    #[instrument(level = "trace", skip_all, fields(?node_small_ids))]
     pub async fn get_all_node_subscriptions(
         &self,
         node_small_ids: &[i64],
@@ -504,11 +550,7 @@ impl AtomaState {
     ///     state_manager.is_node_subscribed_to_task(node_small_id, task_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_id = %node_small_id, task_small_id = %task_small_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%node_small_id, %task_small_id))]
     pub async fn is_node_subscribed_to_task(
         &self,
         node_small_id: i64,
@@ -556,14 +598,14 @@ impl AtomaState {
     ///     state_manager.subscribe_node_to_task(node_small_id, task_small_id, price_per_compute_unit).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(
-            node_small_id = %node_small_id,
-            task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
-            max_num_compute_units = %max_num_compute_units
+            %node_small_id,
+            %task_small_id,
+            %price_per_compute_unit,
+            %max_num_compute_units
         )
     )]
     pub async fn subscribe_node_to_task(
@@ -618,10 +660,10 @@ impl AtomaState {
     ///     state_manager.get_node_subscription_by_task_small_id(task_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(task_small_id = %task_small_id)
+        fields(%task_small_id)
     )]
     pub async fn get_node_subscription_by_task_small_id(
         &self,
@@ -666,14 +708,14 @@ impl AtomaState {
     ///     state_manager.update_node_subscription(1, 2, 100, 1000).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(
-            node_small_id = %node_small_id,
-            task_small_id = %task_small_id,
-            price_per_compute_unit = %price_per_compute_unit,
-            max_num_compute_units = %max_num_compute_units
+            %node_small_id,
+            %task_small_id,
+            %price_per_compute_unit,
+            %max_num_compute_units
         )
     )]
     pub async fn update_node_subscription(
@@ -720,10 +762,10 @@ impl AtomaState {
     ///     state_manager.unsubscribe_node_from_task(node_small_id, task_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(node_small_id = %node_small_id, task_small_id = %task_small_id)
+        fields(%node_small_id, %task_small_id)
     )]
     pub async fn unsubscribe_node_from_task(
         &self,
@@ -767,10 +809,10 @@ impl AtomaState {
     ///     state_manager.get_stack(stack_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id)
+        fields(%stack_small_id)
     )]
     pub async fn get_stack(&self, stack_small_id: i64) -> Result<Stack> {
         let stack = sqlx::query("SELECT * FROM stacks WHERE stack_small_id = $1")
@@ -811,10 +853,10 @@ impl AtomaState {
     ///     state_manager.get_stacks(stack_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_ids = ?stack_small_ids)
+        fields(?stack_small_ids)
     )]
     pub async fn get_stacks(&self, stack_small_ids: &[i64]) -> Result<Vec<Stack>> {
         let mut query_builder = build_query_with_in(
@@ -861,10 +903,10 @@ impl AtomaState {
     ///     state_manager.get_all_stacks(node_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(node_small_ids = ?node_small_ids)
+        fields(?node_small_ids)
     )]
     pub async fn get_stacks_by_node_small_ids(&self, node_small_ids: &[i64]) -> Result<Vec<Stack>> {
         let mut query_builder = build_query_with_in(
@@ -912,10 +954,10 @@ impl AtomaState {
     ///     state_manager.get_stack_by_id(node_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(node_small_id = %node_small_id)
+        fields(%node_small_id)
     )]
     pub async fn get_stack_by_id(&self, node_small_id: i64) -> Result<Vec<Stack>> {
         let stacks = sqlx::query("SELECT * FROM stacks WHERE selected_node_id = $1")
@@ -965,10 +1007,10 @@ impl AtomaState {
     ///     state_manager.get_almost_filled_stacks(node_ids, threshold).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(node_small_ids = ?node_small_ids, fraction = %fraction)
+        fields(?node_small_ids, %fraction)
     )]
     pub async fn get_almost_filled_stacks(
         &self,
@@ -1048,13 +1090,13 @@ impl AtomaState {
     ///
     /// This function is particularly useful for atomically reserving compute units from a stack,
     /// ensuring that the operation is thread-safe and consistent even under concurrent access.
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(
-            stack_small_id = %stack_small_id,
-            public_key = %public_key,
-            num_compute_units = %num_compute_units
+            %stack_small_id,
+            %public_key,
+            %num_compute_units
         )
     )]
     pub async fn get_available_stack_with_compute_units(
@@ -1069,7 +1111,7 @@ impl AtomaState {
             UPDATE stacks
             SET already_computed_units = already_computed_units + $1
             WHERE stack_small_id = $2
-            AND owner_address = $3
+            AND owner = $3
             AND num_compute_units - already_computed_units >= $1
             AND in_settle_period = false
             RETURNING *
@@ -1111,7 +1153,7 @@ impl AtomaState {
     ///     state_manager.insert_new_stack(stack).await
     /// }   
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(stack_small_id = %stack.stack_small_id,
@@ -1124,10 +1166,10 @@ impl AtomaState {
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner_address, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
-            .bind(stack.owner_address)
+            .bind(stack.owner)
             .bind(stack.stack_small_id)
             .bind(stack.stack_id)
             .bind(stack.task_small_id)
@@ -1172,10 +1214,10 @@ impl AtomaState {
     ///     state_manager.update_computed_units_for_stack(stack_small_id, already_computed_units).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, already_computed_units = %already_computed_units)
+        fields(%stack_small_id, %already_computed_units)
     )]
     pub async fn update_computed_units_for_stack(
         &self,
@@ -1219,10 +1261,10 @@ impl AtomaState {
     ///     state_manager.update_stack_num_tokens(stack_small_id, estimated_total_tokens, total_tokens).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, estimated_total_tokens = %estimated_total_tokens, total_tokens = %total_tokens)
+        fields(%stack_small_id, %estimated_total_tokens, %total_tokens)
     )]
     pub async fn update_stack_num_tokens(
         &self,
@@ -1279,10 +1321,10 @@ impl AtomaState {
     ///     state_manager.get_stack_settlement_ticket(stack_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id)
+        fields(%stack_small_id)
     )]
     pub async fn get_stack_settlement_ticket(
         &self,
@@ -1323,10 +1365,10 @@ impl AtomaState {
     ///     state_manager.get_stack_settlement_tickets(stack_small_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_ids = ?stack_small_ids)
+        fields(?stack_small_ids)
     )]
     pub async fn get_stack_settlement_tickets(
         &self,
@@ -1374,7 +1416,7 @@ impl AtomaState {
     ///     state_manager.insert_new_stack_settlement_ticket(stack_settlement_ticket).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(stack_small_id = %stack_settlement_ticket.stack_small_id,
@@ -1458,10 +1500,10 @@ impl AtomaState {
     ///     state_manager.update_stack_total_hash(stack_small_id, new_hash).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id, new_hash = ?new_hash)
+        fields(%stack_small_id, ?new_hash)
     )]
     pub async fn update_stack_total_hash(
         &self,
@@ -1515,10 +1557,10 @@ impl AtomaState {
     ///     state_manager.get_stack_total_hash(stack_small_id).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_id = %stack_small_id)
+        fields(%stack_small_id)
     )]
     pub async fn get_stack_total_hash(&self, stack_small_id: i64) -> Result<Vec<u8>> {
         let total_hash = sqlx::query_scalar::<_, Vec<u8>>(
@@ -1563,10 +1605,10 @@ impl AtomaState {
     ///     state_manager.get_all_total_hashes(stack_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
-        fields(stack_small_ids = ?stack_small_ids)
+        fields(?stack_small_ids)
     )]
     pub async fn get_all_total_hashes(&self, stack_small_ids: &[i64]) -> Result<Vec<Vec<u8>>> {
         let mut query_builder = build_query_with_in(
@@ -1630,12 +1672,7 @@ impl AtomaState {
     ///     ).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id,
-            attestation_node_id = %attestation_node_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%stack_small_id, %attestation_node_id))]
     pub async fn update_stack_settlement_ticket_with_attestation_commitments(
         &self,
         stack_small_id: i64,
@@ -1730,12 +1767,7 @@ impl AtomaState {
     ///     state_manager.settle_stack_settlement_ticket(stack_small_id, dispute_settled_at_epoch).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id,
-            dispute_settled_at_epoch = %dispute_settled_at_epoch)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%stack_small_id, %dispute_settled_at_epoch))]
     pub async fn settle_stack_settlement_ticket(
         &self,
         stack_small_id: i64,
@@ -1781,12 +1813,7 @@ impl AtomaState {
     ///     state_manager.update_stack_settlement_ticket_with_claim(stack_small_id, user_refund_amount).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id,
-            user_refund_amount = %user_refund_amount)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%stack_small_id, %user_refund_amount))]
     pub async fn update_stack_settlement_ticket_with_claim(
         &self,
         stack_small_id: i64,
@@ -1837,11 +1864,7 @@ impl AtomaState {
     ///     state_manager.get_claimed_stacks(node_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_ids = ?node_small_ids)
-    )]
+    #[instrument(level = "trace", skip_all, fields(?node_small_ids))]
     pub async fn get_claimed_stacks(
         &self,
         node_small_ids: &[i64],
@@ -1894,12 +1917,7 @@ impl AtomaState {
     ///     state_manager.get_stack_attestation_disputes(stack_small_id, attestation_node_id).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(stack_small_id = %stack_small_id,
-            attestation_node_id = %attestation_node_id)
-    )]
+    #[instrument(level = "trace", skip_all, fields(%stack_small_id, %attestation_node_id))]
     pub async fn get_stack_attestation_disputes(
         &self,
         stack_small_id: i64,
@@ -1954,11 +1972,7 @@ impl AtomaState {
     ///     state_manager.get_against_attestation_disputes(node_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_ids = ?node_small_ids)
-    )]
+    #[instrument(level = "trace", skip_all, fields(?node_small_ids))]
     pub async fn get_against_attestation_disputes(
         &self,
         node_small_ids: &[i64],
@@ -2011,11 +2025,7 @@ impl AtomaState {
     ///     state_manager.get_own_attestation_disputes(node_ids).await
     /// }
     /// ```
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(node_small_ids = ?node_small_ids)
-    )]
+    #[instrument(level = "trace", skip_all, fields(?node_small_ids))]
     pub async fn get_own_attestation_disputes(
         &self,
         node_small_ids: &[i64],
@@ -2064,7 +2074,7 @@ impl AtomaState {
     ///     state_manager.insert_stack_attestation_dispute(dispute).await
     /// }
     /// ```
-    #[tracing::instrument(
+    #[instrument(
         level = "trace",
         skip_all,
         fields(stack_small_id = %stack_attestation_dispute.stack_small_id,
@@ -2114,11 +2124,12 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn store_address(state_manager: &AtomaStateManager, small_id: i64, address: String) -> Result<(), AtomaStateManagerError> {
-    ///    state_manager.store_node_public_address(small_id, address).await
+    /// async fn update_address(state_manager: &AtomaStateManager, small_id: i64, address: String) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_public_address(small_id, address).await
     /// }
     /// ```
-    pub async fn store_node_public_address(&self, small_id: i64, address: String) -> Result<()> {
+    #[instrument(level = "trace", skip_all, fields(%small_id, %address))]
+    pub async fn update_node_public_address(&self, small_id: i64, address: String) -> Result<()> {
         sqlx::query(
             "INSERT INTO node_public_addresses 
                     (node_small_id, public_address) 
@@ -2131,6 +2142,43 @@ impl AtomaState {
         .execute(&self.db)
         .await?;
         Ok(())
+    }
+
+    /// Retrieves the public address of a node from the database.
+    ///
+    /// This method fetches the public address of a node from the `node_public_addresses` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `small_id` - The unique small identifier of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<String>>`: A result containing either:
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_address(state_manager: &AtomaStateManager, small_id: i64) -> Result<Option<String>, AtomaStateManagerError> {
+    ///    state_manager.get_node_public_address(small_id).await
+    /// }    
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%small_id))]
+    pub async fn get_node_public_address(&self, small_id: i64) -> Result<Option<String>> {
+        let address = sqlx::query_scalar(
+            "SELECT public_address FROM node_public_addresses WHERE node_small_id = $1",
+        )
+        .bind(small_id)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(address)
     }
 }
 
@@ -2184,22 +2232,19 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `tasks` table.
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_tasks(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS tasks (
-                task_small_id INTEGER PRIMARY KEY,
+                task_small_id BIGINT PRIMARY KEY,
                 task_id TEXT UNIQUE NOT NULL,
-                role INTEGER NOT NULL,
+                role SMALLINT NOT NULL,
                 model_name TEXT,
                 is_deprecated BOOLEAN NOT NULL,
-                valid_until_epoch INTEGER,
-                deprecated_at_epoch INTEGER,
-                optimizations TEXT NOT NULL,
+                valid_until_epoch BIGINT,
+                deprecated_at_epoch BIGINT,
                 security_level INTEGER NOT NULL,
-                task_metrics_compute_unit INTEGER NOT NULL,
-                task_metrics_time_unit INTEGER,
-                task_metrics_value INTEGER,
-                minimum_reputation_score INTEGER
+                minimum_reputation_score SMALLINT
             )",
         )
         .execute(db)
@@ -2212,8 +2257,8 @@ pub(crate) mod queries {
     /// This table stores information about node subscriptions to tasks.
     ///
     /// # Table Structure
-    /// - `task_small_id`: INTEGER NOT NULL - The ID of the task being subscribed to.
-    /// - `node_small_id`: INTEGER NOT NULL - The ID of the node subscribing to the task.
+    /// - `task_small_id`: BIGINT NOT NULL - The ID of the task being subscribed to.
+    /// - `node_small_id`: BIGINT NOT NULL - The ID of the node subscribing to the task.
     /// - `price_per_compute_unit`: INTEGER NOT NULL - The price per compute unit for this subscription.
     ///
     /// # Primary Key
@@ -2224,13 +2269,14 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `node_subscriptions` table.
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_subscribed_tasks(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_subscriptions (
-            task_small_id INTEGER NOT NULL,
-            node_small_id INTEGER NOT NULL,
-            price_per_compute_unit INTEGER NOT NULL,
-            max_num_compute_units INTEGER NOT NULL,
+            task_small_id BIGINT NOT NULL,
+            node_small_id BIGINT NOT NULL,
+            price_per_compute_unit BIGINT NOT NULL,
+            max_num_compute_units BIGINT NOT NULL,
             valid BOOLEAN NOT NULL,
             PRIMARY KEY (task_small_id, node_small_id),
             FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id)
@@ -2264,23 +2310,28 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `stacks` table.
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_stacks(db: &PgPool) -> Result<()> {
         sqlx::query("CREATE TABLE IF NOT EXISTS stacks (
-                stack_small_id INTEGER PRIMARY KEY,
-                owner_address TEXT NOT NULL,
+                stack_small_id BIGINT PRIMARY KEY,
+                owner TEXT NOT NULL,
                 stack_id TEXT UNIQUE NOT NULL,
-                task_small_id INTEGER NOT NULL,
-                selected_node_id INTEGER NOT NULL,
-                num_compute_units INTEGER NOT NULL,
-                price INTEGER NOT NULL,
-                already_computed_units INTEGER NOT NULL,
+                task_small_id BIGINT NOT NULL,
+                selected_node_id BIGINT NOT NULL,
+                num_compute_units BIGINT NOT NULL,
+                price BIGINT NOT NULL,
+                already_computed_units BIGINT NOT NULL,
                 in_settle_period BOOLEAN NOT NULL,
                 total_hash BYTEA NOT NULL,
-                num_total_messages INTEGER NOT NULL,
+                num_total_messages BIGINT NOT NULL,
+                FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
                 FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
             );").execute(db).await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner);")
+            .execute(db)
+            .await?;
         sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_stacks_owner_address ON stacks (owner_address);",
+            "CREATE INDEX IF NOT EXISTS idx_stacks_task_small_id ON stacks (task_small_id);",
         )
         .execute(db)
         .await?;
@@ -2320,10 +2371,11 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_settlement_tickets` table.
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_stack_settlement_tickets(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
-            stack_small_id INTEGER PRIMARY KEY,
+            stack_small_id BIGINT PRIMARY KEY,
             selected_node_id INTEGER NOT NULL,
             num_claimed_compute_units INTEGER NOT NULL,
             requested_attestation_nodes TEXT NOT NULL,
@@ -2361,10 +2413,11 @@ pub(crate) mod queries {
     ///
     /// # Returns
     /// A `String` containing the SQL query to create the `stack_attestation_disputes` table.
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_stack_attestation_disputes(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
-                stack_small_id INTEGER NOT NULL,
+                stack_small_id BIGINT NOT NULL,
                 attestation_commitment BYTEA NOT NULL,
                 attestation_node_id INTEGER NOT NULL,
                 original_node_id INTEGER NOT NULL,
@@ -2411,10 +2464,11 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_nodes_public_addresses(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_public_addresses (
-                node_small_id INTEGER PRIMARY KEY,
+                node_small_id BIGINT PRIMARY KEY,
                 public_address TEXT NOT NULL
             )",
         )
@@ -2459,6 +2513,7 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     pub(crate) async fn create_all_tables(db: &PgPool) -> Result<()> {
         create_tasks(db).await?;
         create_subscribed_tasks(db).await?;
