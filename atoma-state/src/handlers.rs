@@ -31,7 +31,11 @@ pub async fn handle_atoma_event(
             handle_node_task_unsubscription_event(state_manager, event).await
         }
         AtomaEvent::StackCreatedEvent(event) => {
-            handle_stack_created_event(state_manager, event).await
+            if event.owner == state_manager.state.owner {
+                handle_stack_created_event(state_manager, event).await
+            } else {
+                Ok(())
+            }
         }
         AtomaEvent::StackTrySettleEvent(event) => {
             handle_stack_try_settle_event(state_manager, event).await

@@ -54,6 +54,28 @@ impl Sui {
         })
     }
 
+    /// Get the active address
+    ///
+    /// # Returns
+    ///
+    /// Returns the active address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if it fails to get the active address.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let mut client = AtomaProxy::new(config).await?;
+    /// let address = client.active_address()?;
+    /// ```
+    pub fn active_address(&mut self) -> Result<String> {
+        self.wallet_ctx
+            .active_address()
+            .map(|address| address.to_string())
+    }
+
     /// Acquire a new stack entry
     ///
     /// # Arguments

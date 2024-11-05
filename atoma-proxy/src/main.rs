@@ -121,11 +121,14 @@ async fn main() -> Result<()> {
         shutdown_receiver.clone(),
     );
 
+    let mut sui = Sui::new(&config.sui).await?;
+
     // Initialize your StateManager here
     let state_manager = AtomaStateManager::new_from_url(
         config.state.database_url,
         event_subscriber_receiver,
         state_manager_receiver,
+        sui.active_address()?,
     )
     .await?;
 
@@ -136,10 +139,8 @@ async fn main() -> Result<()> {
 
     let sui_subscriber_handle =
         tokio::spawn(async move { Ok::<(), anyhow::Error>(sui_subscriber.run().await?) });
-    let server_handle = tokio::spawn(async move {
-        let sui = Sui::new(&config.sui).await?;
-        start_server(config.service, state_manager_sender, sui).await
-    });
+    let server_handle =
+        tokio::spawn(async move { start_server(config.service, state_manager_sender, sui).await });
 
     let (sui_subscriber_result, server_result, state_manager_result) =
         try_join!(sui_subscriber_handle, server_handle, state_manager_handle)?;
