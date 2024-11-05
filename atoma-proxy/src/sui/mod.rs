@@ -116,7 +116,7 @@ impl Sui {
         response
             .events
             .and_then(|event| {
-                event.data.get(0).and_then(|event| {
+                event.data.first().and_then(|event| {
                     event
                         .parsed_json
                         .get("selected_node_id")

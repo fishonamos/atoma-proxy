@@ -190,7 +190,7 @@ pub async fn chat_completions_handler(
             error!("Failed to parse OpenAI API response: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
         })
-        .map(|response| Json(response))
+        .map(Json)
 }
 
 #[instrument(level = "info", skip_all, fields(
@@ -324,7 +324,7 @@ pub async fn start_server(
     let tcp_listener = TcpListener::bind(config.service_bind_address).await?;
 
     let proxy_state = ProxyState {
-        state_manager_sender: state_manager_sender,
+        state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
         password: config.password,
     };
