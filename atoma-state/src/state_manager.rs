@@ -34,9 +34,10 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        owner: String,
     ) -> Self {
         Self {
-            state: AtomaState::new(db),
+            state: AtomaState::new(db, owner),
             event_subscriber_receiver,
             state_manager_receiver,
         }
@@ -74,12 +75,13 @@ impl AtomaStateManager {
         database_url: String,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        owner: String,
     ) -> Result<Self> {
         Self::create_database_if_not_exists(&database_url, "atoma").await?;
         let db = PgPool::connect(&format!("{}/atoma", database_url)).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
-            state: AtomaState::new(db),
+            state: AtomaState::new(db, owner),
             event_subscriber_receiver,
             state_manager_receiver,
         })
@@ -192,19 +194,22 @@ impl AtomaStateManager {
 pub struct AtomaState {
     /// The Postgres connection pool used for database operations.
     pub db: PgPool,
+
+    /// The address used for filtering stacks in the DB.
+    pub owner: String,
 }
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: PgPool) -> Self {
-        Self { db }
+    pub fn new(db: PgPool, owner: String) -> Self {
+        Self { db, owner }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
-    pub async fn new_from_url(database_url: String) -> Result<Self> {
+    pub async fn new_from_url(database_url: String, owner: String) -> Result<Self> {
         let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
-        Ok(Self { db })
+        Ok(Self { db, owner })
     }
 
     /// Get a task by its unique identifier.

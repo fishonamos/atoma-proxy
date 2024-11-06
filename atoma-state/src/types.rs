@@ -71,7 +71,7 @@ pub struct Stack {
     /// by the node for this stack.
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
-    pub num_total_messages: i32,
+    pub num_total_messages: i64,
 }
 
 impl From<StackCreatedEvent> for Stack {
