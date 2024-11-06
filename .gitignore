@@ -3,3 +3,5 @@ target/
 config.toml
 logs/
 cursor.toml
+
+.env
