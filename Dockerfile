@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Create necessary directories
-RUN mkdir -p /app/data /app/logs
+RUN mkdir -p /app/logs
 
 # Copy the built binary from builder stage
 COPY --from=builder /usr/src/atoma-proxy/target/release/atoma-proxy /usr/local/bin/atoma-proxy

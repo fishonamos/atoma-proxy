@@ -23,7 +23,6 @@ services:
       - ./config.toml:/app/config.toml
       - ./logs:/app/logs
       - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
-      - ./data:/app/data
     env_file:
       - .env
     ports:

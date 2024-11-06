@@ -77,8 +77,7 @@ impl AtomaStateManager {
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
         owner: String,
     ) -> Result<Self> {
-        Self::create_database_if_not_exists(&database_url, "atoma").await?;
-        let db = PgPool::connect(&format!("{}/atoma", database_url)).await?;
+        let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db, owner),
