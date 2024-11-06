@@ -42,5 +42,12 @@ COPY config.toml ./config.toml
 # Set executable permissions explicitly
 RUN chmod +x /usr/local/bin/atoma-proxy
 
+# Copy and set up entrypoint script
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Copy host client.yaml and modify keystore path
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
 # Use full path in CMD
 CMD ["/usr/local/bin/atoma-proxy", "--config-path", "/app/config.toml"]
