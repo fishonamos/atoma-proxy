@@ -7,8 +7,9 @@ use atoma_sui::events::{
 use tracing::{info, instrument, trace};
 
 use crate::{
-    state_manager::Result, types::AtomaAtomaStateManagerEvent, AtomaStateManager,
-    AtomaStateManagerError,
+    state_manager::Result,
+    types::{AtomaAtomaStateManagerEvent, Stack},
+    AtomaStateManager, AtomaStateManagerError,
 };
 
 #[instrument(level = "trace", skip_all)]
@@ -31,11 +32,9 @@ pub async fn handle_atoma_event(
             handle_node_task_unsubscription_event(state_manager, event).await
         }
         AtomaEvent::StackCreatedEvent(event) => {
-            if event.owner == state_manager.state.owner {
-                handle_stack_created_event(state_manager, event).await
-            } else {
-                Ok(())
-            }
+            // NOTE: Don't handle creation here. It's handled when the stack is created right away.
+            info!("Stack created event: {:?}", event);
+            Ok(())
         }
         AtomaEvent::StackTrySettleEvent(event) => {
             handle_stack_try_settle_event(state_manager, event).await
@@ -356,6 +355,7 @@ pub(crate) async fn handle_node_task_unsubscription_event(
 pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
+    already_computed_units: i64,
 ) -> Result<()> {
     let node_small_id = event.selected_node_id.inner;
     trace!(
@@ -363,7 +363,8 @@ pub(crate) async fn handle_stack_created_event(
         event = "handle-stack-created-event",
         "Stack selected current node, with id {node_small_id}, inserting new stack"
     );
-    let stack = event.into();
+    let mut stack: Stack = event.into();
+    stack.already_computed_units = already_computed_units;
     state_manager.state.insert_new_stack(stack).await?;
     Ok(())
 }
@@ -750,6 +751,12 @@ pub(crate) async fn handle_state_manager_event(
             result_sender
                 .send(public_address)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
+        AtomaAtomaStateManagerEvent::NewStackAcquired {
+            event,
+            already_computed_units,
+        } => {
+            handle_stack_created_event(state_manager, event, already_computed_units).await?;
         }
     }
     Ok(())
