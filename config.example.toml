@@ -13,8 +13,7 @@ sui_keystore_path = "~/.sui/sui_config/sui.keystore" # Path to the Sui keystore 
 cursor_path = "."
 
 [atoma-state]
-# URL of the PostgreSQL database, you need to replace POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB with 
-# the actuals values in the .env file
+# URL of the PostgreSQL database, it SHOULD be the same as the `ATOMA_STATE_DATABASE_URL` variable value in the .env file
 database_url = "postgresql://POSTGRES_USER:POSTGRES_PASSWORD@db:5432/POSTGRES_DB"
 
 [atoma-service]
