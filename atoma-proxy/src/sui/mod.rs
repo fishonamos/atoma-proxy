@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use atoma_sui::AtomaSuiConfig;
+use atoma_sui::{events::StackCreatedEvent, AtomaSuiConfig};
 use blake2::{
     digest::generic_array::{typenum::U32, GenericArray},
     Blake2b, Digest,
@@ -54,28 +54,6 @@ impl Sui {
         })
     }
 
-    /// Get the active address
-    ///
-    /// # Returns
-    ///
-    /// Returns the active address.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if it fails to get the active address.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let mut client = AtomaProxy::new(config).await?;
-    /// let address = client.active_address()?;
-    /// ```
-    pub fn active_address(&mut self) -> Result<String> {
-        self.wallet_ctx
-            .active_address()
-            .map(|address| address.to_string())
-    }
-
     /// Acquire a new stack entry
     ///
     /// # Arguments
@@ -97,7 +75,7 @@ impl Sui {
         task_small_id: u64,
         num_compute_units: u64,
         price: u64,
-    ) -> Result<(u64, u64)> {
+    ) -> Result<StackCreatedEvent> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
         let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
@@ -132,27 +110,12 @@ impl Sui {
             "Acquire new stack entry transaction submitted successfully. Transaction digest: {:?}",
             response.digest
         );
-        response
+        let stack_created_event = response
             .events
-            .and_then(|event| {
-                event.data.first().and_then(|event| {
-                    Some((
-                        event
-                            .parsed_json
-                            .get("stack_small_id")
-                            .and_then(|stack_small_id| stack_small_id.get("inner"))
-                            .and_then(|stack_small_id| stack_small_id.as_str())
-                            .and_then(|stack_small_id| stack_small_id.parse::<u64>().ok())?,
-                        event
-                            .parsed_json
-                            .get("selected_node_id")
-                            .and_then(|selected_node_id| selected_node_id.get("inner"))
-                            .and_then(|selected_node_id| selected_node_id.as_str())
-                            .and_then(|selected_node_id| selected_node_id.parse::<u64>().ok())?,
-                    ))
-                })
-            })
-            .ok_or_else(|| anyhow::anyhow!("No node was selected"))
+            .and_then(|event| event.data.first().cloned())
+            .ok_or_else(|| anyhow::anyhow!("No stack created event"))?
+            .parsed_json;
+        Ok(serde_json::from_value(stack_created_event.clone())?)
     }
 
     /// Get or load the TOMA wallet object ID

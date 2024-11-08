@@ -34,10 +34,9 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-        owner: String,
     ) -> Self {
         Self {
-            state: AtomaState::new(db, owner),
+            state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
         }
@@ -75,12 +74,11 @@ impl AtomaStateManager {
         database_url: String,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
-        owner: String,
     ) -> Result<Self> {
         let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
-            state: AtomaState::new(db, owner),
+            state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
         })
@@ -193,22 +191,19 @@ impl AtomaStateManager {
 pub struct AtomaState {
     /// The Postgres connection pool used for database operations.
     pub db: PgPool,
-
-    /// The address used for filtering stacks in the DB.
-    pub owner: String,
 }
 
 impl AtomaState {
     /// Constructor
-    pub fn new(db: PgPool, owner: String) -> Self {
-        Self { db, owner }
+    pub fn new(db: PgPool) -> Self {
+        Self { db }
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
-    pub async fn new_from_url(database_url: String, owner: String) -> Result<Self> {
+    pub async fn new_from_url(database_url: String) -> Result<Self> {
         let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
-        Ok(Self { db, owner })
+        Ok(Self { db })
     }
 
     /// Get a task by its unique identifier.
@@ -259,12 +254,23 @@ impl AtomaState {
     pub async fn get_stacks_for_model(&self, model: &str, free_units: i64) -> Result<Vec<Stack>> {
         // TODO: filter also by security level and other constraints
         let tasks = sqlx::query(
-            "SELECT stacks.* FROM stacks
-                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id 
-                WHERE tasks.model_name = $1 AND stacks.num_compute_units - stacks.already_computed_units >= $2")
+            "WITH selected_stack AS (
+                SELECT stacks.stack_small_id
+                FROM stacks
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
+                WHERE tasks.model_name = $1
+                AND stacks.num_compute_units - stacks.already_computed_units >= $2
+                LIMIT 1
+            )
+            UPDATE stacks
+            SET already_computed_units = already_computed_units + $2
+            WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
+            RETURNING stacks.*",
+        )
         .bind(model)
         .bind(free_units)
-        .fetch_all(&self.db).await?;
+        .fetch_all(&self.db)
+        .await?;
         tasks
             .into_iter()
             .map(|task| Stack::from_row(&task).map_err(AtomaStateManagerError::from))

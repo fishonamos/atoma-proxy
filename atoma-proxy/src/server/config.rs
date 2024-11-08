@@ -19,6 +19,24 @@ pub struct AtomaServiceConfig {
     ///
     /// This password is used to authenticate requests to the Atoma Proxy Service.
     pub password: String,
+
+    /// List of model names.
+    ///
+    /// This field contains a list of model names that are deployed by the Atoma Service,
+    /// on behalf of the node.
+    pub models: Vec<String>,
+
+    /// List of model revisions.
+    ///
+    /// This field contains a list of the associated model revisions, for each
+    /// model that is currently supported by the Atoma Service.
+    pub revisions: Vec<String>,
+
+    /// Hugging face api token.
+    ///
+    /// This field contains the Hugging Face API token that is used to authenticate
+    /// requests to the Hugging Face API.
+    pub hf_token: String,
 }
 
 impl AtomaServiceConfig {
