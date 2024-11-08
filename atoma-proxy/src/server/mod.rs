@@ -169,11 +169,16 @@ pub async fn chat_completions_handler(
             StatusCode::BAD_REQUEST
         })?;
 
-    let total_tokens =
+    let estimated_total_tokens =
         get_token_estimate(messages, max_tokens, &state.tokenizers[tokenizer_index]).await?;
 
-    let (selected_stack_small_id, selected_node_id) =
-        get_selected_node(model, &state.state_manager_sender, &state.sui, total_tokens).await?;
+    let (selected_stack_small_id, selected_node_id) = get_selected_node(
+        model,
+        &state.state_manager_sender,
+        &state.sui,
+        estimated_total_tokens,
+    )
+    .await?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -216,7 +221,7 @@ pub async fn chat_completions_handler(
     headers.remove(AUTHORIZATION);
 
     let client = reqwest::blocking::Client::new();
-    client
+    let response = client
         .post(format!("{node_address}/v1/chat/completions"))
         .headers(headers)
         .header("X-Signature", signature)
@@ -231,8 +236,26 @@ pub async fn chat_completions_handler(
         .map_err(|err| {
             error!("Failed to parse OpenAI API response: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let real_total_tokens = response
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(|total_tokens| total_tokens.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
+    state
+        .state_manager_sender
+        .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
+            stack_small_id: selected_stack_small_id,
+            estimated_total_tokens: estimated_total_tokens as i64,
+            total_tokens: real_total_tokens as i64,
         })
-        .map(Json)
+        .map_err(|err| {
+            error!("Failed to send UpdateStackNumTokens event: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(response))
 }
 
 /// Estimates the total number of tokens in the messages.
