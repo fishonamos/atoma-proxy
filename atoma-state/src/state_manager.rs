@@ -75,11 +75,11 @@ impl AtomaStateManager {
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let (database_url, db_name) = database_url
+        let (db_url, db_name) = database_url
             .rsplit_once('/')
             .ok_or(AtomaStateManagerError::DatabaseUrlError)?;
-        Self::create_database_if_not_exists(&database_url, &db_name).await?;
-        let db = PgPool::connect(&format!("{database_url}/{db_name}")).await?;
+        Self::create_database_if_not_exists(db_url, db_name).await?;
+        let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
