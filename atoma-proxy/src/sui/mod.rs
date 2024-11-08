@@ -97,7 +97,7 @@ impl Sui {
         task_small_id: u64,
         num_compute_units: u64,
         price: u64,
-    ) -> Result<u64> {
+    ) -> Result<(u64, u64)> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
         let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
@@ -136,11 +136,20 @@ impl Sui {
             .events
             .and_then(|event| {
                 event.data.first().and_then(|event| {
-                    event
-                        .parsed_json
-                        .get("selected_node_id")
-                        .and_then(|node_id| node_id.as_str())
-                        .and_then(|node_id| node_id.parse::<u64>().ok())
+                    Some((
+                        event
+                            .parsed_json
+                            .get("stack_small_id")
+                            .and_then(|stack_small_id| stack_small_id.get("inner"))
+                            .and_then(|stack_small_id| stack_small_id.as_str())
+                            .and_then(|stack_small_id| stack_small_id.parse::<u64>().ok())?,
+                        event
+                            .parsed_json
+                            .get("selected_node_id")
+                            .and_then(|selected_node_id| selected_node_id.get("inner"))
+                            .and_then(|selected_node_id| selected_node_id.as_str())
+                            .and_then(|selected_node_id| selected_node_id.parse::<u64>().ok())?,
+                    ))
                 })
             })
             .ok_or_else(|| anyhow::anyhow!("No node was selected"))

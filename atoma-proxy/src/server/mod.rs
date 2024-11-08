@@ -5,12 +5,13 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use flume::Sender;
+use reqwest::header::AUTHORIZATION;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::{
     net::TcpListener,
     sync::{oneshot, RwLock},
@@ -23,6 +24,7 @@ pub use config::AtomaServiceConfig;
 use crate::sui::Sui;
 
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
+const MODELS_PATH: &str = "/v1/models";
 const NODE_PUBLIC_ADDRESS_REGISTRATION: &str = "/node/registration";
 
 /// Represents the shared state of the application.
@@ -130,8 +132,8 @@ pub async fn chat_completions_handler(
         .map(|model| model.to_string())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    let selected_node_id =
-        get_selected_node(model, &state.state_manager_sender, &state.sui).await?;
+    let (selected_stack_small_id, selected_node_id) =
+        get_selected_node(&model, &state.state_manager_sender, &state.sui).await?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -170,19 +172,22 @@ pub async fn chat_completions_handler(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let client = reqwest::Client::new();
+    let mut headers = headers;
+    headers.remove(AUTHORIZATION);
+
+    let client = reqwest::blocking::Client::new();
     client
-        .post(&node_address)
+        .post(format!("{node_address}/v1/chat/completions"))
+        .headers(headers)
         .header("X-Signature", signature)
+        .header("X-Stack-Small-Id", selected_stack_small_id)
         .json(&payload)
         .send()
-        .await
         .map_err(|err| {
             error!("Failed to send OpenAI API request: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
         })
         .map(|response| response.json::<Value>())?
-        .await
         .map_err(|err| {
             error!("Failed to parse OpenAI API response: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -192,15 +197,15 @@ pub async fn chat_completions_handler(
 
 #[instrument(level = "info", skip_all, fields(%model))]
 async fn get_selected_node(
-    model: String,
+    model: &str,
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     sui: &Arc<RwLock<Sui>>,
-) -> Result<i64, StatusCode> {
+) -> Result<(i64, i64), StatusCode> {
     let (result_sender, result_receiver) = oneshot::channel();
 
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
-            model: model.clone(),
+            model: model.to_string(),
             free_compute_units: 1000,
             result_sender,
         })
@@ -224,7 +229,7 @@ async fn get_selected_node(
         let (result_sender, result_receiver) = oneshot::channel();
         state_manager_sender
             .send(AtomaAtomaStateManagerEvent::GetTasksForModel {
-                model: model.clone(),
+                model: model.to_string(),
                 result_sender,
             })
             .map_err(|err| {
@@ -250,12 +255,15 @@ async fn get_selected_node(
             .await
             .acquire_new_stack_entry(tasks[0].task_small_id as u64, 1000, 100)
             .await
+            .map(|(stack_small_id, selected_node_id)| {
+                (stack_small_id as i64, selected_node_id as i64)
+            })
             .map_err(|err| {
                 error!("Failed to acquire new stack entry: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
-            })? as i64)
+            })?)
     } else {
-        Ok(stacks[0].selected_node_id)
+        Ok((stacks[0].stack_small_id, stacks[0].selected_node_id))
     }
 }
 
@@ -268,6 +276,40 @@ pub struct NodePublicAddressAssignment {
     node_small_id: u64,
     /// The public address of the node
     public_address: String,
+}
+
+async fn models_handler() -> Result<Json<Value>, StatusCode> {
+    Ok(Json(json!({
+        "object": "list",
+        "data": [
+          {
+            "id": "meta-llama/Llama-3.2-3B-Instruct",
+            "object": "model",
+            "created": 1730930595,
+            "owned_by": "vllm",
+            "root": "meta-llama/Llama-3.2-3B-Instruct",
+            "parent": null,
+            "max_model_len": 2048,
+            "permission": [
+              {
+                "id": "modelperm-f3fdf969d5b54544ba451b1f5785325a",
+                "object": "model_permission",
+                "created": 1730930595,
+                "allow_create_engine": false,
+                "allow_sampling": true,
+                "allow_logprobs": true,
+                "allow_search_indices": false,
+                "allow_view": true,
+                "allow_fine_tuning": false,
+                "organization": "*",
+                "group": null,
+                "is_blocking": false
+              }
+            ]
+          }
+        ]
+      }
+    )))
 }
 
 #[instrument(level = "info", skip_all, fields(?payload))]
@@ -318,6 +360,7 @@ pub async fn start_server(
     };
     let router = Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(MODELS_PATH, get(models_handler))
         .route(
             NODE_PUBLIC_ADDRESS_REGISTRATION,
             post(node_public_address_registration),
