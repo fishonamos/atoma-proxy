@@ -1,7 +1,10 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use axum::body::Body;
 use axum::http::{header::AUTHORIZATION, StatusCode};
+use axum::response::{IntoResponse, Response, Sse};
 use axum::{extract::State, http::HeaderMap, Json};
 use flume::Sender;
 use serde_json::Value;
@@ -13,6 +16,7 @@ use utoipa::OpenApi;
 use crate::sui::Sui;
 
 use super::http_server::ProxyState;
+use super::streamer::Streamer;
 
 /// Path for the chat completions endpoint.
 ///
@@ -27,6 +31,9 @@ const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
 // The default price for a new stack entry.
 // TODO: Make this configurable or compute from the available stacks subscriptions.
 const STACK_ENTRY_PRICE: u64 = 100;
+
+/// The interval for the keep-alive message in the SSE stream.
+const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
 /// OpenAPI documentation for the chat completions endpoint.
 ///
@@ -81,39 +88,275 @@ pub async fn chat_completions_handler(
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
-    if !check_auth(&state.password, &headers) {
-        return Err(StatusCode::UNAUTHORIZED);
+) -> Result<Response<Body>, StatusCode> {
+    let (node_address, signature, selected_stack_small_id, headers, estimated_total_tokens) =
+        authenticate_and_process(&state, headers, &payload).await?;
+    let is_streaming = payload
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if is_streaming {
+        handle_streaming_response(
+            state,
+            node_address,
+            signature,
+            selected_stack_small_id,
+            headers,
+            payload,
+            estimated_total_tokens as i64,
+        )
+        .await
+    } else {
+        handle_non_streaming_response(
+            state,
+            node_address,
+            signature,
+            selected_stack_small_id,
+            headers,
+            payload,
+            estimated_total_tokens as i64,
+        )
+        .await
+    }
+}
+
+/// Handles non-streaming chat completion requests by processing them through the inference service.
+///
+/// This function performs several key operations:
+/// 1. Forwards the request to the inference service with appropriate headers
+/// 2. Processes the response and extracts token usage
+/// 3. Updates token usage tracking in the state manager
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service configuration
+/// * `node_address` - The address of the inference node to send the request to
+/// * `signature` - Authentication signature for the request
+/// * `selected_stack_small_id` - Unique identifier for the selected stack
+/// * `headers` - HTTP headers to forward with the request
+/// * `payload` - The JSON payload containing the chat completion request
+/// * `estimated_total_tokens` - Estimated token count for the request
+///
+/// # Returns
+///
+/// Returns a `Result` containing the HTTP response from the inference service, or a `StatusCode` error.
+///
+/// # Errors
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - Response parsing fails
+/// - State manager updates fail
+///
+/// # Example Response Structure
+///
+/// ```json
+/// {
+///     "choices": [...],
+///     "usage": {
+///         "total_tokens": 123,
+///         "prompt_tokens": 45,
+///         "completion_tokens": 78
+///     }
+/// }
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = CHAT_COMPLETIONS_PATH,
+        completion_type = "non-streaming",
+        stack_small_id,
+        estimated_total_tokens,
+        payload_hash
+    )
+)]
+async fn handle_non_streaming_response(
+    state: ProxyState,
+    node_address: String,
+    signature: String,
+    selected_stack_small_id: i64,
+    headers: HeaderMap,
+    payload: Value,
+    estimated_total_tokens: i64,
+) -> Result<Response<Body>, StatusCode> {
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post(format!("{node_address}/v1/chat/completions"))
+        .headers(headers)
+        .header("X-Signature", signature)
+        .header("X-Stack-Small-Id", selected_stack_small_id)
+        .json(&payload)
+        .send()
+        .map_err(|err| {
+            error!("Failed to send OpenAI API request: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+        .map(|response| response.json::<Value>())?
+        .map_err(|err| {
+            error!("Failed to parse OpenAI API response: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+        .map(Json)?;
+
+    // Extract the response total number of tokens
+    let total_tokens = response
+        .get("usage")
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(|total_tokens| total_tokens.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
+    // NOTE: We need to update the stack num tokens, because the inference response might have produced
+    // less tokens than estimated what we initially estimated, from the middleware.
+    if let Err(e) = utils::update_state_manager(
+        &state,
+        selected_stack_small_id,
+        estimated_total_tokens,
+        total_tokens,
+    )
+    .await
+    {
+        error!("Error updating state manager: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    // Get the model from the payload, so we can find the task.
-    let model = payload
-        .get("model")
-        .and_then(|model| model.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
+    Ok(response.into_response())
+}
 
-    let max_tokens = payload
-        .get("max_tokens")
-        .and_then(|max_tokens| max_tokens.as_u64())
-        .ok_or(StatusCode::BAD_REQUEST)?;
+/// Handles streaming chat completion requests by establishing a Server-Sent Events (SSE) connection.
+///
+/// This function processes streaming chat completion requests by:
+/// 1. Adding required streaming options to the payload
+/// 2. Forwarding the request to the inference service
+/// 3. Establishing an SSE connection with keep-alive functionality
+/// 4. Setting up a Streamer to handle the response chunks and manage token usage
+///
+/// # Arguments
+///
+/// * `state` - Application state containing service configuration and connections
+/// * `payload` - The JSON payload containing the chat completion request
+/// * `stack_small_id` - Unique identifier for the stack making the request
+/// * `estimated_total_tokens` - Estimated token count for the request
+/// * `payload_hash` - BLAKE2b hash of the original request payload
+///
+/// # Returns
+///
+/// Returns a `Result` containing an SSE stream response, or a `StatusCode` error.
+///
+/// # Errors
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// - The inference service request fails
+/// - The inference service returns a non-success status code
+///
+/// # Example Response Stream
+///
+/// The SSE stream will emit events in the following format:
+/// ```text
+/// data: {"choices": [...], "usage": null}
+/// data: {"choices": [...], "usage": null}
+/// data: {"choices": [...], "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}
+/// ```
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = CHAT_COMPLETIONS_PATH,
+        completion_type = "streaming",
+        stack_small_id,
+        estimated_total_tokens,
+        payload_hash
+    )
+)]
+async fn handle_streaming_response(
+    state: ProxyState,
+    node_address: String,
+    signature: String,
+    selected_stack_small_id: i64,
+    headers: HeaderMap,
+    mut payload: Value,
+    estimated_total_tokens: i64,
+) -> Result<Response<Body>, StatusCode> {
+    // NOTE: If streaming is requested, add the include_usage option to the payload
+    // so that the atoma node state manager can be updated with the total number of tokens
+    // that were processed for this request.
+    payload["stream_options"] = serde_json::json!({
+        "include_usage": true
+    });
 
-    let messages = payload.get("messages").ok_or(StatusCode::BAD_REQUEST)?;
-
-    let tokenizer_index = state
-        .models
-        .iter()
-        .position(|m| m == model)
-        .ok_or_else(|| {
-            error!("Model not supported");
-            StatusCode::BAD_REQUEST
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
+        .headers(headers)
+        .header("X-Signature", signature)
+        .header("X-Stack-Small-Id", selected_stack_small_id)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error sending request to inference service: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    if !response.status().is_success() {
+        error!("Inference service returned error: {}", response.status());
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let stream = response.bytes_stream();
+
+    // Create the SSE stream
+    let stream = Sse::new(Streamer::new(
+        stream,
+        state.state_manager_sender,
+        selected_stack_small_id,
+        estimated_total_tokens,
+    ))
+    .keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_millis(STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS))
+            .text("keep-alive"),
+    );
+
+    Ok(stream.into_response())
+}
+
+/// Authenticates the request and processes initial steps up to signature creation.
+///
+/// # Arguments
+///
+/// * `state` - The proxy state containing password, models, and other shared state
+/// * `headers` - Request headers containing authorization
+/// * `payload` - Request payload containing model and token information
+///
+/// # Returns
+///
+/// Returns a tuple of (node_address, signature, selected_stack_small_id, headers) if successful
+#[instrument(level = "info", skip_all)]
+async fn authenticate_and_process(
+    state: &ProxyState,
+    headers: HeaderMap,
+    payload: &Value,
+) -> Result<(String, String, i64, HeaderMap, u64), StatusCode> {
+    // Authentication and payload extraction
+    let (model, max_tokens, messages, tokenizer_index) =
+        authenticate_and_extract(state, &headers, payload).await?;
+
+    // Token estimation
     let total_tokens =
-        get_token_estimate(messages, max_tokens, &state.tokenizers[tokenizer_index]).await?;
+        get_token_estimate(&messages, max_tokens, &state.tokenizers[tokenizer_index]).await?;
 
-    let (selected_stack_small_id, selected_node_id) =
-        get_selected_node(model, &state.state_manager_sender, &state.sui, total_tokens).await?;
+    // Get node selection
+    let (selected_stack_small_id, selected_node_id) = get_selected_node(
+        &model,
+        &state.state_manager_sender,
+        &state.sui,
+        total_tokens,
+    )
+    .await?;
 
+    // Get node address
     let (result_sender, result_receiver) = oneshot::channel();
     state
         .state_manager_sender
@@ -141,37 +384,74 @@ pub async fn chat_completions_handler(
             StatusCode::NOT_FOUND
         })?;
 
+    // Get signature
     let signature = state
         .sui
         .write()
         .await
-        .get_sui_signature(&payload)
+        .get_sui_signature(payload)
         .map_err(|err| {
             error!("Failed to get Sui signature: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    // Prepare headers
     let mut headers = headers;
     headers.remove(AUTHORIZATION);
 
-    let client = reqwest::blocking::Client::new();
-    client
-        .post(format!("{node_address}/v1/chat/completions"))
-        .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
-        .json(&payload)
-        .send()
-        .map_err(|err| {
-            error!("Failed to send OpenAI API request: {:?}", err);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
-        .map(|response| response.json::<Value>())?
-        .map_err(|err| {
-            error!("Failed to parse OpenAI API response: {:?}", err);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
-        .map(Json)
+    Ok((
+        node_address,
+        signature,
+        selected_stack_small_id,
+        headers,
+        total_tokens,
+    ))
+}
+
+/// Authenticates the request and extracts required fields from the payload.
+///
+/// # Arguments
+///
+/// * `state` - The proxy state containing password and models
+/// * `headers` - Request headers containing authorization
+/// * `payload` - Request payload containing model and token information
+///
+/// # Returns
+///
+/// Returns a tuple of (model, max_tokens, messages, tokenizer_index) if successful
+#[instrument(level = "info", skip_all)]
+async fn authenticate_and_extract(
+    state: &ProxyState,
+    headers: &HeaderMap,
+    payload: &Value,
+) -> Result<(String, u64, Value, usize), StatusCode> {
+    if !check_auth(&state.password, headers) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let model = payload
+        .get("model")
+        .and_then(|model| model.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?
+        .to_string();
+
+    let max_tokens = payload
+        .get("max_tokens")
+        .and_then(|max_tokens| max_tokens.as_u64())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let messages = payload.get("messages").ok_or(StatusCode::BAD_REQUEST)?;
+
+    let tokenizer_index = state
+        .models
+        .iter()
+        .position(|m| m == &model)
+        .ok_or_else(|| {
+            error!("Model not supported");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    Ok((model, max_tokens, messages.clone(), tokenizer_index))
 }
 
 /// Checks the authentication of the request.
@@ -390,5 +670,54 @@ async fn get_selected_node(
         Ok((stack_small_id, selected_node_id))
     } else {
         Ok((stacks[0].stack_small_id, stacks[0].selected_node_id))
+    }
+}
+
+pub(crate) mod utils {
+    use super::*;
+
+    /// Updates the state manager with token usage and hash information for a stack.
+    ///
+    /// This function performs two main operations:
+    /// 1. Updates the token count for the stack with both estimated and actual usage
+    /// 2. Computes and updates a total hash combining the payload and response hashes
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Reference to the application state containing the state manager sender
+    /// * `stack_small_id` - Unique identifier for the stack
+    /// * `estimated_total_tokens` - The estimated number of tokens before processing
+    /// * `total_tokens` - The actual number of tokens used
+    /// * `payload_hash` - Hash of the request payload
+    /// * `response_hash` - Hash of the response data
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if both updates succeed, or a `StatusCode::INTERNAL_SERVER_ERROR` if either update fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The state manager channel is closed
+    /// - Either update operation fails to complete
+    pub(crate) async fn update_state_manager(
+        state: &ProxyState,
+        stack_small_id: i64,
+        estimated_total_tokens: i64,
+        total_tokens: i64,
+    ) -> Result<(), StatusCode> {
+        // Update stack num tokens
+        state
+            .state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::UpdateStackNumTokens {
+                stack_small_id,
+                estimated_total_tokens,
+                total_tokens,
+            })
+            .map_err(|e| {
+                error!("Error updating stack num tokens: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        Ok(())
     }
 }
