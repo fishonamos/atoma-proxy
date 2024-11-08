@@ -27,7 +27,11 @@ use crate::sui::Sui;
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const MODELS_PATH: &str = "/v1/models";
 const NODE_PUBLIC_ADDRESS_REGISTRATION: &str = "/node/registration";
+// The default value when creating a new stack entry.
+// TODO: Make this configurable or compute from the available stacks subscriptions.
 const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
+// The default price for a new stack entry.
+// TODO: Make this configurable or compute from the available stacks subscriptions.
 const STACK_ENTRY_PRICE: u64 = 100;
 
 /// Represents the shared state of the application.
@@ -387,6 +391,7 @@ pub struct NodePublicAddressAssignment {
 }
 
 async fn models_handler(State(state): State<ProxyState>) -> Result<Json<Value>, StatusCode> {
+    // TODO: Implement proper model handling
     Ok(Json(json!({
         "object": "list",
         "data": state
@@ -397,7 +402,7 @@ async fn models_handler(State(state): State<ProxyState>) -> Result<Json<Value>, 
               "id": model,
               "object": "model",
               "created": 1730930595,
-              "owned_by": "vllm",
+              "owned_by": "atoma",
               "root": model,
               "parent": null,
               "max_model_len": 2048,

@@ -32,7 +32,7 @@ pub async fn handle_atoma_event(
             handle_node_task_unsubscription_event(state_manager, event).await
         }
         AtomaEvent::StackCreatedEvent(event) => {
-            // Don't handle creation here. It's handled when the stack is created right away.
+            // NOTE: Don't handle creation here. It's handled when the stack is created right away.
             info!("Stack created event: {:?}", event);
             Ok(())
         }
