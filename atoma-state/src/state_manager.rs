@@ -42,63 +42,6 @@ impl AtomaStateManager {
         }
     }
 
-    /// Creates a new PostgreSQL database if it doesn't already exist.
-    ///
-    /// This function connects to the PostgreSQL server using the provided URL and checks if a database
-    /// with the specified name exists. If the database doesn't exist, it creates a new one.
-    ///
-    /// # Arguments
-    ///
-    /// * `db_url` - The base PostgreSQL connection URL (without the database name).
-    /// * `db_name` - The name of the database to check/create.
-    ///
-    /// # Returns
-    ///
-    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The connection to the PostgreSQL server fails.
-    /// - The database existence check query fails.
-    /// - The database creation query fails (if needed).
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use atoma_node::atoma_state::AtomaStateManager;
-    ///
-    /// async fn setup_database() -> Result<(), AtomaStateManagerError> {
-    ///     let db_url = "postgres://user:password@localhost:5432";
-    ///     let db_name = "atoma_db";
-    ///     
-    ///     AtomaStateManager::create_database_if_not_exists(db_url, db_name).await
-    /// }
-    /// ```
-    async fn create_database_if_not_exists(db_url: &str, db_name: &str) -> Result<()> {
-        // Connect to the PostgreSQL server (default database)
-        let pool: PgPool = PgPool::connect(db_url).await?;
-
-        // Check if the database exists
-        let exists: (bool,) =
-            sqlx::query_as("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)")
-                .bind(db_name)
-                .fetch_one(&pool)
-                .await?;
-
-        // Create the database if it does not exist
-        if !exists.0 {
-            sqlx::query(&format!("CREATE DATABASE {}", db_name))
-                .execute(&pool)
-                .await?;
-            println!("Database '{}' created.", db_name);
-        } else {
-            println!("Database '{}' already exists.", db_name);
-        }
-
-        Ok(())
-    }
-
     /// Creates a new `AtomaStateManager` instance from a database URL.
     ///
     /// This method establishes a connection to the Postgres database using the provided URL,
@@ -108,10 +51,6 @@ impl AtomaStateManager {
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let (db_url, db_name) = database_url
-            .rsplit_once('/')
-            .ok_or(AtomaStateManagerError::DatabaseUrlError)?;
-        Self::create_database_if_not_exists(db_url, db_name).await?;
         let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
