@@ -12,6 +12,7 @@ use flume::Sender;
 use reqwest::header::AUTHORIZATION;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokenizers::Tokenizer;
 use tokio::{
     net::TcpListener,
     sync::{oneshot, RwLock},
@@ -26,6 +27,8 @@ use crate::sui::Sui;
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const MODELS_PATH: &str = "/v1/models";
 const NODE_PUBLIC_ADDRESS_REGISTRATION: &str = "/node/registration";
+const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
+const STACK_ENTRY_PRICE: u64 = 100;
 
 /// Represents the shared state of the application.
 ///
@@ -52,6 +55,21 @@ pub struct ProxyState {
     ///
     /// This password is used to authenticate requests to the atoma proxy service.
     pub password: String,
+
+    /// Tokenizer used for processing text input.
+    ///
+    /// The tokenizer is responsible for breaking down text input into
+    /// manageable tokens, which are then used in various natural language
+    /// processing tasks.
+    pub tokenizers: Arc<Vec<Arc<Tokenizer>>>,
+
+    /// List of available AI models.
+    ///
+    /// This list contains the names or identifiers of AI models that
+    /// the application can use for inference tasks. It allows the
+    /// application to dynamically select and switch between different
+    /// models as needed.
+    pub models: Arc<Vec<String>>,
 }
 
 /// Checks the authentication of the request.
@@ -129,11 +147,29 @@ pub async fn chat_completions_handler(
     let model = payload
         .get("model")
         .and_then(|model| model.as_str())
-        .map(|model| model.to_string())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
+    let max_tokens = payload
+        .get("max_tokens")
+        .and_then(|max_tokens| max_tokens.as_u64())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let messages = payload.get("messages").ok_or(StatusCode::BAD_REQUEST)?;
+
+    let tokenizer_index = state
+        .models
+        .iter()
+        .position(|m| m == model)
+        .ok_or_else(|| {
+            error!("Model not supported");
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let total_tokens =
+        get_token_estimate(messages, max_tokens, &state.tokenizers[tokenizer_index]).await?;
+
     let (selected_stack_small_id, selected_node_id) =
-        get_selected_node(&model, &state.state_manager_sender, &state.sui).await?;
+        get_selected_node(model, &state.state_manager_sender, &state.sui, total_tokens).await?;
 
     let (result_sender, result_receiver) = oneshot::channel();
     state
@@ -195,18 +231,68 @@ pub async fn chat_completions_handler(
         .map(Json)
 }
 
+/// Estimates the total number of tokens in the messages.
+///
+/// This function estimates the total number of tokens in the messages by encoding each message
+/// and counting the number of tokens in the encoded message.
+///
+/// # Arguments
+///
+/// * `messages`: The messages to estimate the number of tokens for.
+/// * `max_tokens`: The maximum number of tokens allowed.
+/// * `tokenizers`: The tokenizers used to encode the messages.
+///
+/// # Returns
+///
+/// Returns the estimated total number of tokens in the messages.
+///
+/// # Errors
+///
+/// Returns a bad request status code if the messages are not in the expected format.
+/// Returns an internal server error status code if encoding the message fails.
+#[instrument(level = "info", skip_all)]
+async fn get_token_estimate(
+    messages: &Value,
+    max_tokens: u64,
+    tokenizers: &Arc<Tokenizer>,
+) -> Result<u64, StatusCode> {
+    let mut total_num_tokens = 0;
+    for message in messages.as_array().ok_or(StatusCode::BAD_REQUEST)? {
+        let content = message
+            .get("content")
+            .and_then(|content| content.as_str())
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        let num_tokens = tokenizers
+            .encode(content, true)
+            .map_err(|err| {
+                error!("Failed to encode message: {:?}", err);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .get_ids()
+            .len() as u64;
+        total_num_tokens += num_tokens;
+        // add 2 tokens as a safety margin, for start and end message delimiters
+        total_num_tokens += 2;
+        // add 1 token as a safety margin, for the role name of the message
+        total_num_tokens += 1;
+    }
+    total_num_tokens += max_tokens;
+    Ok(total_num_tokens)
+}
+
 #[instrument(level = "info", skip_all, fields(%model))]
 async fn get_selected_node(
     model: &str,
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     sui: &Arc<RwLock<Sui>>,
+    total_tokens: u64,
 ) -> Result<(i64, i64), StatusCode> {
     let (result_sender, result_receiver) = oneshot::channel();
 
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
             model: model.to_string(),
-            free_compute_units: 1000,
+            free_compute_units: total_tokens as i64,
             result_sender,
         })
         .map_err(|err| {
@@ -250,18 +336,40 @@ async fn get_selected_node(
             error!("No tasks found for model {}", model);
             return Err(StatusCode::NOT_FOUND);
         }
-        Ok(sui
+        // TODO: What should be the default values for the stack entry/price?
+        if total_tokens > STACK_ENTRY_COMPUTE_UNITS {
+            error!("Total tokens exceeds maximum limit of {STACK_ENTRY_COMPUTE_UNITS}");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let event = sui
             .write()
             .await
-            .acquire_new_stack_entry(tasks[0].task_small_id as u64, 1000, 100)
+            .acquire_new_stack_entry(
+                tasks[0].task_small_id as u64,
+                STACK_ENTRY_COMPUTE_UNITS,
+                STACK_ENTRY_PRICE,
+            )
             .await
-            .map(|(stack_small_id, selected_node_id)| {
-                (stack_small_id as i64, selected_node_id as i64)
-            })
             .map_err(|err| {
                 error!("Failed to acquire new stack entry: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
-            })?)
+            })?;
+
+        let stack_small_id = event.stack_small_id.inner as i64;
+        let selected_node_id = event.selected_node_id.inner as i64;
+
+        // Send the NewStackAcquired event to the state manager, so we have it in the DB.
+        state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::NewStackAcquired {
+                event,
+                already_computed_units: total_tokens as i64,
+            })
+            .map_err(|err| {
+                error!("Failed to send NewStackAcquired event: {:?}", err);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        Ok((stack_small_id, selected_node_id))
     } else {
         Ok((stacks[0].stack_small_id, stacks[0].selected_node_id))
     }
@@ -278,36 +386,40 @@ pub struct NodePublicAddressAssignment {
     public_address: String,
 }
 
-async fn models_handler() -> Result<Json<Value>, StatusCode> {
+async fn models_handler(State(state): State<ProxyState>) -> Result<Json<Value>, StatusCode> {
     Ok(Json(json!({
         "object": "list",
-        "data": [
-          {
-            "id": "meta-llama/Llama-3.2-3B-Instruct",
-            "object": "model",
-            "created": 1730930595,
-            "owned_by": "vllm",
-            "root": "meta-llama/Llama-3.2-3B-Instruct",
-            "parent": null,
-            "max_model_len": 2048,
-            "permission": [
-              {
-                "id": "modelperm-f3fdf969d5b54544ba451b1f5785325a",
-                "object": "model_permission",
-                "created": 1730930595,
-                "allow_create_engine": false,
-                "allow_sampling": true,
-                "allow_logprobs": true,
-                "allow_search_indices": false,
-                "allow_view": true,
-                "allow_fine_tuning": false,
-                "organization": "*",
-                "group": null,
-                "is_blocking": false
-              }
-            ]
-          }
-        ]
+        "data": state
+        .models
+        .iter()
+        .map(|model| {
+            json!({
+              "id": model,
+              "object": "model",
+              "created": 1730930595,
+              "owned_by": "vllm",
+              "root": model,
+              "parent": null,
+              "max_model_len": 2048,
+              "permission": [
+                {
+                  "id": format!("modelperm-{}", model),
+                  "object": "model_permission",
+                  "created": 1730930595,
+                  "allow_create_engine": false,
+                  "allow_sampling": true,
+                  "allow_logprobs": true,
+                  "allow_search_indices": false,
+                  "allow_view": true,
+                  "allow_fine_tuning": false,
+                  "organization": "*",
+                  "group": null,
+                  "is_blocking": false
+                }
+              ]
+            })
+        })
+        .collect::<Vec<_>>()
       }
     )))
 }
@@ -350,6 +462,7 @@ pub async fn start_server(
     config: AtomaServiceConfig,
     state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
     sui: Sui,
+    tokenizers: Vec<Arc<Tokenizer>>,
 ) -> Result<()> {
     let tcp_listener = TcpListener::bind(config.service_bind_address).await?;
 
@@ -357,6 +470,8 @@ pub async fn start_server(
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
         password: config.password,
+        tokenizers: Arc::new(tokenizers),
+        models: Arc::new(config.models),
     };
     let router = Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))

@@ -1,11 +1,14 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
 use clap::Parser;
+use futures::future::try_join_all;
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use server::{start_server, AtomaServiceConfig};
 use sui::Sui;
+use tokenizers::Tokenizer;
 use tokio::{sync::watch, try_join};
 use tracing::{error, instrument};
 use tracing_appender::{
@@ -121,14 +124,13 @@ async fn main() -> Result<()> {
         shutdown_receiver.clone(),
     );
 
-    let mut sui = Sui::new(&config.sui).await?;
+    let sui = Sui::new(&config.sui).await?;
 
     // Initialize your StateManager here
     let state_manager = AtomaStateManager::new_from_url(
         config.state.database_url,
         event_subscriber_receiver,
         state_manager_receiver,
-        sui.active_address()?,
     )
     .await?;
 
@@ -139,14 +141,94 @@ async fn main() -> Result<()> {
 
     let sui_subscriber_handle =
         tokio::spawn(async move { Ok::<(), anyhow::Error>(sui_subscriber.run().await?) });
-    let server_handle =
-        tokio::spawn(async move { start_server(config.service, state_manager_sender, sui).await });
+    let tokenizers = initialize_tokenizers(
+        &config.service.models,
+        &config.service.revisions,
+        &config.service.hf_token,
+    )
+    .await?;
+    let server_handle = tokio::spawn(async move {
+        start_server(config.service, state_manager_sender, sui, tokenizers).await
+    });
 
     let (sui_subscriber_result, server_result, state_manager_result) =
         try_join!(sui_subscriber_handle, server_handle, state_manager_handle)?;
 
     handle_tasks_results(sui_subscriber_result, state_manager_result, server_result)?;
     Ok(())
+}
+
+/// Initializes tokenizers for multiple models by fetching their configurations from HuggingFace.
+///
+/// This function concurrently fetches tokenizer configurations for multiple models from HuggingFace's
+/// repository and initializes them. Each tokenizer is wrapped in an Arc for safe sharing across threads.
+///
+/// # Arguments
+///
+/// * `models` - A slice of model names/paths on HuggingFace (e.g., ["facebook/opt-125m"])
+/// * `revisions` - A slice of revision/branch names corresponding to each model (e.g., ["main"])
+/// * `hf_token` - The HuggingFace API token to use for fetching the tokenizer configurations
+///
+/// # Returns
+///
+/// Returns a `Result` containing a vector of Arc-wrapped tokenizers on success, or an error if:
+/// - Failed to fetch tokenizer configuration from HuggingFace
+/// - Failed to parse the tokenizer JSON
+/// - Any other network or parsing errors occur
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use anyhow::Result;
+///
+/// #[tokio::main]
+/// async fn example() -> Result<()> {
+///     let models = vec!["facebook/opt-125m".to_string()];
+///     let revisions = vec!["main".to_string()];
+///     
+///     let tokenizers = initialize_tokenizers(&models, &revisions).await?;
+///     Ok(())
+/// }
+/// ```
+#[instrument(level = "info", skip(models, revisions))]
+async fn initialize_tokenizers(
+    models: &[String],
+    revisions: &[String],
+    hf_token: &String,
+) -> Result<Vec<Arc<Tokenizer>>> {
+    let api = ApiBuilder::new()
+        .with_progress(true)
+        .with_token(Some(hf_token.clone()))
+        .build()?;
+    let fetch_futures: Vec<_> = models
+        .iter()
+        .zip(revisions.iter())
+        .map(|(model, revision)| {
+            let api = api.clone();
+            async move {
+                let repo = api.repo(Repo::with_revision(
+                    model.clone(),
+                    RepoType::Model,
+                    revision.clone(),
+                ));
+
+                let tokenizer_filename = repo
+                    .get("tokenizer.json")
+                    .expect("Failed to get tokenizer.json");
+
+                Tokenizer::from_file(tokenizer_filename)
+                    .map_err(|e| {
+                        anyhow::anyhow!(format!(
+                            "Failed to parse tokenizer for model {}, with error: {}",
+                            model, e
+                        ))
+                    })
+                    .map(Arc::new)
+            }
+        })
+        .collect();
+
+    try_join_all(fetch_futures).await
 }
 
 /// Handles the results of various tasks (subscriber, state manager, and server).
