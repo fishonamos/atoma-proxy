@@ -75,6 +75,10 @@ impl AtomaStateManager {
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
+        let (db_url, db_name) = database_url
+            .rsplit_once('/')
+            .ok_or(AtomaStateManagerError::DatabaseUrlError)?;
+        Self::create_database_if_not_exists(db_url, db_name).await?;
         let db = PgPool::connect(&database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
@@ -2196,6 +2200,8 @@ impl AtomaState {
 pub enum AtomaStateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("Database url is malformed")]
+    DatabaseUrlError,
     #[error("Stack not found")]
     StackNotFound,
     #[error("Attestation node not found: {0}")]
