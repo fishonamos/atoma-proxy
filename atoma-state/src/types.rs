@@ -27,7 +27,7 @@ pub struct Task {
     /// Security level of the task (encoded as an integer)
     pub security_level: i32,
     /// Optional minimum reputation score required for the task
-    pub minimum_reputation_score: Option<i64>,
+    pub minimum_reputation_score: Option<i16>,
 }
 
 impl From<TaskRegisteredEvent> for Task {
@@ -41,7 +41,7 @@ impl From<TaskRegisteredEvent> for Task {
             valid_until_epoch: None,
             deprecated_at_epoch: None,
             security_level: event.security_level.inner as i32,
-            minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i64),
+            minimum_reputation_score: event.minimum_reputation_score.map(|score| score as i16),
         }
     }
 }
@@ -225,7 +225,7 @@ pub enum AtomaAtomaStateManagerEvent {
     },
     GetStacksForModel {
         model: String,
-        free_compute_units: i32,
+        free_compute_units: i64,
         result_sender: oneshot::Sender<Result<Vec<Stack>>>,
     },
     GetTasksForModel {
