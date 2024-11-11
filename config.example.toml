@@ -10,7 +10,7 @@ sui_config_path = "~/.sui/sui_config/client.yaml"                               
 sui_keystore_path = "~/.sui/sui_config/sui.keystore"                                    # Path to the Sui keystore file, by default (on Linux, or MacOS)
 cursor_path = "./cursor.toml"
 
-[atoma-state]
+[atoma_state]
 # URL of the PostgreSQL database, it SHOULD be the same as the `ATOMA_STATE_DATABASE_URL` variable value in the .env file
 database_url = "postgresql://POSTGRES_USER:POSTGRES_PASSWORD@db:5432/POSTGRES_DB"
 
