@@ -186,19 +186,21 @@ async fn handle_non_streaming_response(
     payload: Value,
     estimated_total_tokens: i64,
 ) -> Result<Response<Body>, StatusCode> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
     let response = client
-        .post(format!("{node_address}/v1/chat/completions"))
+        .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
         .header("X-Signature", signature)
         .header("X-Stack-Small-Id", selected_stack_small_id)
         .json(&payload)
         .send()
+        .await
         .map_err(|err| {
             error!("Failed to send OpenAI API request: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
-        })
-        .map(|response| response.json::<Value>())?
+        })?
+        .json::<Value>()
+        .await
         .map_err(|err| {
             error!("Failed to parse OpenAI API response: {:?}", err);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -281,7 +283,7 @@ async fn handle_streaming_response(
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
-    mut payload: Value,
+    payload: Value,
     estimated_total_tokens: i64,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
