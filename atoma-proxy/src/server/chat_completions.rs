@@ -89,12 +89,18 @@ pub async fn chat_completions_handler(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, StatusCode> {
-    let (node_address, signature, selected_stack_small_id, headers, estimated_total_tokens) =
-        authenticate_and_process(&state, headers, &payload).await?;
     let is_streaming = payload
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let mut payload = payload;
+    if is_streaming {
+        payload["stream_options"] = serde_json::json!({
+            "include_usage": true
+        });
+    }
+    let (node_address, signature, selected_stack_small_id, headers, estimated_total_tokens) =
+        authenticate_and_process(&state, headers, &payload).await?;
     if is_streaming {
         handle_streaming_response(
             state,
@@ -281,9 +287,6 @@ async fn handle_streaming_response(
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
     // that were processed for this request.
-    payload["stream_options"] = serde_json::json!({
-        "include_usage": true
-    });
 
     let client = reqwest::Client::new();
     let response = client
