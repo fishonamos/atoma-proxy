@@ -2172,6 +2172,8 @@ impl AtomaState {
 pub enum AtomaStateManagerError {
     #[error("Failed to connect to the database: {0}")]
     DatabaseConnectionError(#[from] sqlx::Error),
+    #[error("Database url is malformed")]
+    DatabaseUrlError,
     #[error("Stack not found")]
     StackNotFound,
     #[error("Attestation node not found: {0}")]
