@@ -12,6 +12,17 @@ use reqwest;
 use serde_json::Value;
 use tracing::{error, instrument};
 
+/// The chunk that indicates the end of a streaming response
+const DONE_CHUNK: &str = "[DONE]";
+/// The prefix for the data chunk
+const DATA_PREFIX: &str = "data: ";
+/// The keep-alive chunk
+const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
+/// The choices key
+const CHOICES: &str = "choices";
+/// The usage key
+const USAGE: &str = "usage";
+
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
     /// The stream of bytes currently being processed
@@ -138,7 +149,7 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Started;
                 }
 
-                if chunk.as_ref() == b": keep-alive\n\n" {
+                if chunk.as_ref() == KEEP_ALIVE_CHUNK {
                     return Poll::Pending;
                 }
                 let chunk_str = match std::str::from_utf8(&chunk) {
@@ -152,12 +163,11 @@ impl Stream for Streamer {
                     }
                 };
 
-                let chunk_str = chunk_str.strip_prefix("data: ").unwrap_or(chunk_str);
+                let chunk_str = chunk_str.strip_prefix(DATA_PREFIX).unwrap_or(chunk_str);
 
-                if chunk_str.starts_with("[DONE]") {
-                    // Check if this is a final chunk with usage info
+                if chunk_str.starts_with(DONE_CHUNK) {
+                    // This is the last chunk, meaning the inference streaming is complete
                     self.status = StreamStatus::Completed;
-                    // self.handle_final_chunk(usage)?;
                     return Poll::Ready(None);
                 }
 
@@ -165,8 +175,7 @@ impl Stream for Streamer {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
-
-                let choices = match chunk.get("choices").and_then(|choices| choices.as_array()) {
+                let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,
                     None => {
                         error!("Error getting choices from chunk");
@@ -177,7 +186,8 @@ impl Stream for Streamer {
                 };
 
                 if choices.is_empty() {
-                    if let Some(usage) = chunk.get("usage") {
+                    if let Some(usage) = chunk.get(USAGE) {
+                        self.status = StreamStatus::Completed;
                         self.handle_final_chunk(usage)?;
                     }
                 }
