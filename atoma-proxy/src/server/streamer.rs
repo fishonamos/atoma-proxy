@@ -138,15 +138,48 @@ impl Stream for Streamer {
                     self.status = StreamStatus::Started;
                 }
 
-                let chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
+                if chunk.as_ref() == b": keep-alive\n\n" {
+                    return Poll::Pending;
+                }
+                let chunk_str = match std::str::from_utf8(&chunk) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Invalid UTF-8 sequence: {}", e);
+                        return Poll::Ready(Some(Err(Error::new(format!(
+                            "Invalid UTF-8 sequence: {}",
+                            e
+                        )))));
+                    }
+                };
+
+                let chunk_str = chunk_str.strip_prefix("data: ").unwrap_or(chunk_str);
+
+                if chunk_str.starts_with("[DONE]") {
+                    // Check if this is a final chunk with usage info
+                    self.status = StreamStatus::Completed;
+                    // self.handle_final_chunk(usage)?;
+                    return Poll::Ready(None);
+                }
+
+                let chunk = serde_json::from_slice::<Value>(chunk_str.as_bytes()).map_err(|e| {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
 
-                if let Some(usage) = chunk.get("usage") {
-                    // Check if this is a final chunk with usage info
-                    self.status = StreamStatus::Completed;
-                    self.handle_final_chunk(usage)?;
+                let choices = match chunk.get("choices").and_then(|choices| choices.as_array()) {
+                    Some(choices) => choices,
+                    None => {
+                        error!("Error getting choices from chunk");
+                        return Poll::Ready(Some(Err(Error::new(
+                            "Error getting choices from chunk",
+                        ))));
+                    }
+                };
+
+                if choices.is_empty() {
+                    if let Some(usage) = chunk.get("usage") {
+                        self.handle_final_chunk(usage)?;
+                    }
                 }
 
                 Poll::Ready(Some(Ok(Event::default().json_data(&chunk)?)))
