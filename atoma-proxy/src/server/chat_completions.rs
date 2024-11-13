@@ -445,7 +445,7 @@ async fn authenticate_and_extract(
     let max_tokens = payload
         .get("max_tokens")
         .and_then(|max_tokens| max_tokens.as_u64())
-        .ok_or(StatusCode::BAD_REQUEST)?;
+        .unwrap_or(STACK_ENTRY_COMPUTE_UNITS);
 
     let messages = payload.get("messages").ok_or(StatusCode::BAD_REQUEST)?;
 
