@@ -18,10 +18,10 @@ use tracing::{error, instrument};
 pub use components::openapi::openapi_routes;
 use utoipa::{OpenApi, ToSchema};
 
-use crate::{server::chat_completions::CHAT_COMPLETIONS_PATH, sui::Sui};
+use crate::{server::handlers::chat_completions::CHAT_COMPLETIONS_PATH, sui::Sui};
 
 use super::components;
-use super::{chat_completions::chat_completions_handler, AtomaServiceConfig};
+use super::{handlers::chat_completions::chat_completions_handler, AtomaServiceConfig};
 
 /// Path for health check endpoint.
 ///

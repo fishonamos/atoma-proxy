@@ -1,6 +1,6 @@
-pub mod chat_completions;
 pub(crate) mod components;
 mod config;
+pub mod handlers;
 pub mod http_server;
 pub mod streamer;
 

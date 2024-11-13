@@ -15,8 +15,8 @@ use utoipa::OpenApi;
 
 use crate::sui::Sui;
 
-use super::http_server::ProxyState;
-use super::streamer::Streamer;
+use crate::server::http_server::ProxyState;
+use crate::server::streamer::Streamer;
 
 /// Path for the chat completions endpoint.
 ///

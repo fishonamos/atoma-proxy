@@ -2,7 +2,7 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::server::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
+use crate::server::handlers::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
 use crate::server::http_server::{
     HealthOpenApi, ModelsOpenApi, NodePublicAddressRegistrationOpenApi, HEALTH_PATH, MODELS_PATH,
     NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
@@ -11,7 +11,6 @@ use crate::server::http_server::{
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
-        //modifiers(&SecurityAddon),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi),
             (path = MODELS_PATH, api = ModelsOpenApi),
@@ -30,18 +29,6 @@ pub fn openapi_routes() -> Router {
         )
     )]
     struct ApiDoc;
-
-    // struct SecurityAddon;
-    // impl Modify for SecurityAddon {
-    //     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-    //         if let Some(components) = openapi.components.as_mut() {
-    //             components.add_security_scheme(
-    //                 "bearerAuth",
-    //                 SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
-    //             )
-    //         }
-    //     }
-    // }
 
     // Generate the OpenAPI spec and write it to a file
     #[cfg(debug_assertions)]
