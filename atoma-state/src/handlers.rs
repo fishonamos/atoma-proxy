@@ -719,6 +719,24 @@ pub(crate) async fn handle_state_manager_event(
                 .send(tasks)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
+        AtomaAtomaStateManagerEvent::GetCheapestTaskForModel {
+            model,
+            result_sender,
+        } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting cheapest task for model: {}",
+                model
+            );
+            let task = state_manager
+                .state
+                .get_cheapest_task_for_model(&model)
+                .await;
+            result_sender
+                .send(task)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
         AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id,
             public_address,

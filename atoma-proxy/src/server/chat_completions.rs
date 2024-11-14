@@ -24,14 +24,6 @@ use super::streamer::Streamer;
 /// and is used to process chat-based requests for AI model inference.
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
-// The default value when creating a new stack entry.
-// TODO: Make this configurable or compute from the available stacks subscriptions.
-const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
-
-// The default price for a new stack entry.
-// TODO: Make this configurable or compute from the available stacks subscriptions.
-const STACK_ENTRY_PRICE: u64 = 100;
-
 /// The interval for the keep-alive message in the SSE stream.
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
@@ -619,7 +611,7 @@ async fn get_selected_node(
     if stacks.is_empty() {
         let (result_sender, result_receiver) = oneshot::channel();
         state_manager_sender
-            .send(AtomaAtomaStateManagerEvent::GetTasksForModel {
+            .send(AtomaAtomaStateManagerEvent::GetCheapestTaskForModel {
                 model: model.to_string(),
                 result_sender,
             })
@@ -627,7 +619,7 @@ async fn get_selected_node(
                 error!("Failed to send GetTasksForModel event: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let tasks = result_receiver
+        let task = result_receiver
             .await
             .map_err(|err| {
                 error!("Failed to receive GetTasksForModel result: {:?}", err);
@@ -637,22 +629,20 @@ async fn get_selected_node(
                 error!("Failed to get GetTasksForModel result: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        if tasks.is_empty() {
-            error!("No tasks found for model {}", model);
-            return Err(StatusCode::NOT_FOUND);
-        }
-        // TODO: What should be the default values for the stack entry/price?
-        if total_tokens > STACK_ENTRY_COMPUTE_UNITS {
-            error!("Total tokens exceeds maximum limit of {STACK_ENTRY_COMPUTE_UNITS}");
-            return Err(StatusCode::BAD_REQUEST);
-        }
+        let task: atoma_state::types::CheapestTask = match task {
+            Some(task) => task,
+            None => {
+                error!("No tasks found for model {}", model);
+                return Err(StatusCode::NOT_FOUND);
+            }
+        };
         let event = sui
             .write()
             .await
             .acquire_new_stack_entry(
-                tasks[0].task_small_id as u64,
-                STACK_ENTRY_COMPUTE_UNITS,
-                STACK_ENTRY_PRICE,
+                task.task_small_id as u64,
+                task.max_num_compute_units as u64,
+                task.price_per_compute_unit as u64,
             )
             .await
             .map_err(|err| {
