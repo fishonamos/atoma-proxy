@@ -1,8 +1,9 @@
 use std::{path::Path, sync::Arc};
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
+use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
@@ -106,24 +107,6 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .init();
 
     Ok(())
-}
-
-fn spawn_with_shutdown<F, E>(
-    f: F,
-    shutdown_sender: watch::Sender<bool>,
-) -> tokio::task::JoinHandle<Result<()>>
-where
-    E: Into<Error>,
-    F: std::future::Future<Output = Result<(), E>> + Send + 'static,
-{
-    tokio::task::spawn(async move {
-        let res = f.await;
-        if res.is_err() {
-            // Only send shutdown signal if the task failed
-            shutdown_sender.send(true).unwrap();
-        }
-        res.map_err(Into::into)
-    })
 }
 
 #[tokio::main]
