@@ -3,6 +3,7 @@ use std::{path::Path, sync::Arc};
 use anyhow::{Context, Result};
 use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
+use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
 use futures::future::try_join_all;
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
@@ -114,7 +115,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
 
-    let (_shutdown_sender, shutdown_receiver) = watch::channel(false);
+    let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
 
@@ -134,25 +135,46 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let shutdown_receiver_clone = shutdown_receiver.clone();
-    let state_manager_handle = tokio::spawn(async move {
-        Ok::<(), anyhow::Error>(state_manager.run(shutdown_receiver_clone).await?)
-    });
+    let state_manager_handle = spawn_with_shutdown(
+        state_manager.run(shutdown_receiver.clone()),
+        shutdown_sender.clone(),
+    );
 
-    let sui_subscriber_handle =
-        tokio::spawn(async move { Ok::<(), anyhow::Error>(sui_subscriber.run().await?) });
+    let sui_subscriber_handle = spawn_with_shutdown(sui_subscriber.run(), shutdown_sender.clone());
     let tokenizers = initialize_tokenizers(
         &config.service.models,
         &config.service.revisions,
         &config.service.hf_token,
     )
     .await?;
-    let server_handle = tokio::spawn(async move {
-        start_server(config.service, state_manager_sender, sui, tokenizers).await
+    let server_handle = spawn_with_shutdown(
+        start_server(
+            config.service,
+            state_manager_sender,
+            sui,
+            tokenizers,
+            shutdown_receiver.clone(),
+        ),
+        shutdown_sender.clone(),
+    );
+
+    let ctrl_c = tokio::task::spawn(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                println!("ctrl-c received, sending shutdown signal");
+                shutdown_sender.send(true).unwrap();
+            }
+            _ = shutdown_receiver.changed() => {
+            }
+        }
     });
 
-    let (sui_subscriber_result, server_result, state_manager_result) =
-        try_join!(sui_subscriber_handle, server_handle, state_manager_handle)?;
+    let (sui_subscriber_result, server_result, state_manager_result, _) = try_join!(
+        sui_subscriber_handle,
+        server_handle,
+        state_manager_handle,
+        ctrl_c
+    )?;
 
     handle_tasks_results(sui_subscriber_result, state_manager_result, server_result)?;
     Ok(())
