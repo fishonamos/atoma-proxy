@@ -9,6 +9,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 atoma-state.workspace = true
 atoma-sui.workspace = true
+atoma-utils.workspace = true
 axum = { workspace = true, features = ["json"] }
 blake2.workspace = true
 clap.workspace = true

@@ -12,6 +12,7 @@ use flume::Sender;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokenizers::Tokenizer;
+use tokio::sync::watch;
 use tokio::{net::TcpListener, sync::RwLock};
 use tracing::{error, instrument};
 
@@ -324,6 +325,7 @@ pub async fn start_server(
     state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
     sui: Sui,
     tokenizers: Vec<Arc<Tokenizer>>,
+    mut shutdown_receiver: watch::Receiver<bool>,
 ) -> Result<()> {
     let tcp_listener = TcpListener::bind(config.service_bind_address).await?;
 
@@ -344,7 +346,13 @@ pub async fn start_server(
         .with_state(proxy_state)
         .route(HEALTH_PATH, get(health))
         .merge(openapi_routes());
-    let server = axum::serve(tcp_listener, router.into_make_service());
+    let server =
+        axum::serve(tcp_listener, router.into_make_service()).with_graceful_shutdown(async move {
+            shutdown_receiver
+                .changed()
+                .await
+                .expect("Error receiving shutdown signal")
+        });
     server.await?;
     Ok(())
 }
