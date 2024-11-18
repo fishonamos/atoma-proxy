@@ -19,10 +19,15 @@ use tracing::{error, instrument};
 pub use components::openapi::openapi_routes;
 use utoipa::{OpenApi, ToSchema};
 
-use crate::{server::handlers::chat_completions::CHAT_COMPLETIONS_PATH, sui::Sui};
+use crate::server::handlers::{
+    chat_completions::chat_completions_handler, chat_completions::CHAT_COMPLETIONS_PATH,
+    embeddings::embeddings_handler, embeddings::EMBEDDINGS_PATH,
+    image_generations::image_generations_handler, image_generations::IMAGE_GENERATIONS_PATH,
+};
+use crate::sui::Sui;
 
 use super::components;
-use super::{handlers::chat_completions::chat_completions_handler, AtomaServiceConfig};
+use super::AtomaServiceConfig;
 
 /// Path for health check endpoint.
 ///
@@ -338,6 +343,8 @@ pub async fn start_server(
     };
     let router = Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
         .route(MODELS_PATH, get(models_handler))
         .route(
             NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
