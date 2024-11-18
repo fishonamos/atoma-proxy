@@ -611,7 +611,7 @@ async fn get_selected_node(
     if stacks.is_empty() {
         let (result_sender, result_receiver) = oneshot::channel();
         state_manager_sender
-            .send(AtomaAtomaStateManagerEvent::GetCheapestTaskForModel {
+            .send(AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
                 model: model.to_string(),
                 result_sender,
             })
@@ -619,7 +619,7 @@ async fn get_selected_node(
                 error!("Failed to send GetTasksForModel event: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let task = result_receiver
+        let node = result_receiver
             .await
             .map_err(|err| {
                 error!("Failed to receive GetTasksForModel result: {:?}", err);
@@ -629,8 +629,8 @@ async fn get_selected_node(
                 error!("Failed to get GetTasksForModel result: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let task: atoma_state::types::CheapestTask = match task {
-            Some(task) => task,
+        let node: atoma_state::types::CheapestNode = match node {
+            Some(node) => node,
             None => {
                 error!("No tasks found for model {}", model);
                 return Err(StatusCode::NOT_FOUND);
@@ -640,9 +640,9 @@ async fn get_selected_node(
             .write()
             .await
             .acquire_new_stack_entry(
-                task.task_small_id as u64,
-                task.max_num_compute_units as u64,
-                task.price_per_compute_unit as u64,
+                node.task_small_id as u64,
+                node.max_num_compute_units as u64,
+                node.price_per_compute_unit as u64,
             )
             .await
             .map_err(|err| {

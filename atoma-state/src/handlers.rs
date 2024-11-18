@@ -719,19 +719,19 @@ pub(crate) async fn handle_state_manager_event(
                 .send(tasks)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
-        AtomaAtomaStateManagerEvent::GetCheapestTaskForModel {
+        AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
             model,
             result_sender,
         } => {
             trace!(
                 target = "atoma-state-handlers",
                 event = "handle-state-manager-event",
-                "Getting cheapest task for model: {}",
+                "Getting cheapest node for model: {}",
                 model
             );
             let task = state_manager
                 .state
-                .get_cheapest_task_for_model(&model)
+                .get_cheapest_node_for_model(&model)
                 .await;
             result_sender
                 .send(task)

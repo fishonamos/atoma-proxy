@@ -1,7 +1,7 @@
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
-    AtomaAtomaStateManagerEvent, CheapestTask, NodeSubscription, Stack, StackAttestationDispute,
+    AtomaAtomaStateManagerEvent, CheapestNode, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
 
@@ -284,7 +284,7 @@ impl AtomaState {
             .collect()
     }
 
-    /// Get task for model with the cheapest price (based on the current node subscription).
+    /// Get node settings for model with the cheapest price (based on the current node subscription).
     ///
     /// This method fetches the task from the database that is associated with
     /// the given model through the `tasks` table and has the cheapest price per compute unit.
@@ -296,8 +296,8 @@ impl AtomaState {
     ///
     /// # Returns
     ///
-    /// - `Result<Option<CheapestTask>>>`: A result containing either:
-    ///  - `Ok(Some<CheapestTask>)`: A `CheapestTask` object representing the task with the cheapest price.
+    /// - `Result<Option<CheapestNode>>>`: A result containing either:
+    ///  - `Ok(Some<CheapestNode>)`: A `CheapestNode` object representing the node setting with the cheapest price.
     ///  - `Ok(None)`: If no task is found for the given model.
     ///  - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
@@ -305,8 +305,8 @@ impl AtomaState {
     ///
     /// This function will return an error if the database query fails.
     #[instrument(level = "trace", skip_all, fields(%model))]
-    pub async fn get_cheapest_task_for_model(&self, model: &str) -> Result<Option<CheapestTask>> {
-        let task = sqlx::query(
+    pub async fn get_cheapest_node_for_model(&self, model: &str) -> Result<Option<CheapestNode>> {
+        let node_settings = sqlx::query(
             "SELECT tasks.task_small_id, price_per_compute_unit, max_num_compute_units 
             FROM (SELECT * 
                   FROM tasks 
@@ -323,7 +323,9 @@ impl AtomaState {
         .bind(false)
         .fetch_optional(&self.db)
         .await?;
-        Ok(task.map(|task| CheapestTask::from_row(&task)).transpose()?)
+        Ok(node_settings
+            .map(|node_settings| CheapestNode::from_row(&node_settings))
+            .transpose()?)
     }
 
     /// Retrieves all tasks from the database.

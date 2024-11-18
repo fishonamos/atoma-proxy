@@ -46,9 +46,9 @@ impl From<TaskRegisteredEvent> for Task {
     }
 }
 
-/// Represents the cheapest task for a specific model
+/// Represents the cheapest node settings for a specific model
 #[derive(FromRow)]
-pub struct CheapestTask {
+pub struct CheapestNode {
     /// Unique small integer identifier for the task
     pub task_small_id: i64,
     /// Price per compute unit for the task that is offered by some node
@@ -243,9 +243,9 @@ pub enum AtomaAtomaStateManagerEvent {
         model: String,
         result_sender: oneshot::Sender<Result<Vec<Task>>>,
     },
-    GetCheapestTaskForModel {
+    GetCheapestNodeForModel {
         model: String,
-        result_sender: oneshot::Sender<Result<Option<CheapestTask>>>,
+        result_sender: oneshot::Sender<Result<Option<CheapestNode>>>,
     },
     UpsertNodePublicAddress {
         node_small_id: i64,
