@@ -729,12 +729,12 @@ pub(crate) async fn handle_state_manager_event(
                 "Getting cheapest node for model: {}",
                 model
             );
-            let task = state_manager
+            let node = state_manager
                 .state
                 .get_cheapest_node_for_model(&model)
                 .await;
             result_sender
-                .send(task)
+                .send(node)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
