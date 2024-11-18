@@ -1,6 +1,7 @@
 use std::{
     pin::Pin,
     task::{Context, Poll},
+    time::Instant,
 };
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
@@ -35,6 +36,12 @@ pub struct Streamer {
     stack_small_id: i64,
     /// State manager sender
     state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
+    /// Start time of the request
+    start: Instant,
+    /// Start time of the decode
+    start_decode: Option<Instant>,
+    /// Node id that's running this request
+    node_id: i64,
 }
 
 /// Represents the various states of a streaming process
@@ -57,6 +64,8 @@ impl Streamer {
         state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
         stack_small_id: i64,
         estimated_total_tokens: i64,
+        start: Instant,
+        node_id: i64,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -64,6 +73,9 @@ impl Streamer {
             estimated_total_tokens,
             stack_small_id,
             state_manager_sender,
+            start,
+            start_decode: None,
+            node_id,
         }
     }
 
@@ -106,6 +118,22 @@ impl Streamer {
         )
     )]
     fn handle_final_chunk(&mut self, usage: &Value) -> Result<(), Error> {
+        // Get input tokens
+        let input_tokens = usage
+            .get("prompt_tokens")
+            .and_then(|t| t.as_i64())
+            .ok_or_else(|| {
+                error!("Error getting prompt tokens from usage");
+                Error::new("Error getting prompt tokens from usage")
+            })?;
+        // Get output tokens
+        let output_tokens = usage
+            .get("completion_tokens")
+            .and_then(|t| t.as_i64())
+            .ok_or_else(|| {
+                error!("Error getting completion tokens from usage");
+                Error::new("Error getting completion tokens from usage")
+            })?;
         // Get total tokens
         let total_tokens = usage
             .get("total_tokens")
@@ -127,6 +155,52 @@ impl Streamer {
             error!("Error updating stack num tokens: {}", e);
             return Err(Error::new(format!(
                 "Error updating stack num tokens: {}",
+                e
+            )));
+        }
+        // Update the nodes throughput performance
+        if let Err(e) = self.state_manager_sender.send(
+            AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                node_small_id: self.node_id,
+                input_tokens,
+                output_tokens,
+                time: self.start.elapsed().as_secs_f64(),
+            },
+        ) {
+            error!("Error updating node throughput performance: {}", e);
+            return Err(Error::new(format!(
+                "Error updating node throughput performance: {}",
+                e
+            )));
+        }
+
+        if let Err(e) = self.state_manager_sender.send(
+            AtomaAtomaStateManagerEvent::UpdateNodeDecodePerformance {
+                node_small_id: self.node_id,
+                tokens: output_tokens,
+                time: self
+                    .start_decode
+                    .expect("This should be filled on the first token")
+                    .elapsed()
+                    .as_secs_f64(),
+            },
+        ) {
+            error!("Error updating node decode performance: {}", e);
+            return Err(Error::new(format!(
+                "Error updating node decode performance: {}",
+                e
+            )));
+        }
+        if let Err(e) = self.state_manager_sender.send(
+            AtomaAtomaStateManagerEvent::UpdateNodePrefillPerformance {
+                node_small_id: self.node_id,
+                tokens: input_tokens,
+                time: (self.start_decode.unwrap() - self.start).as_secs_f64(),
+            },
+        ) {
+            error!("Error updating node prefill performance: {}", e);
+            return Err(Error::new(format!(
+                "Error updating node prefill performance: {}",
                 e
             )));
         }
@@ -184,6 +258,20 @@ impl Stream for Streamer {
                         ))));
                     }
                 };
+
+                if self.start_decode.is_none() {
+                    self.start_decode = Some(Instant::now());
+                    let latency = self.start.elapsed().as_secs_f64();
+                    self.state_manager_sender
+                        .send(AtomaAtomaStateManagerEvent::UpdateNodeLatencyPerformance {
+                            node_small_id: self.node_id,
+                            latency,
+                        })
+                        .map_err(|e| {
+                            error!("Error updating node latency performance: {}", e);
+                            Error::new(format!("Error updating node latency performance: {}", e))
+                        })?;
+                }
 
                 if choices.is_empty() {
                     if let Some(usage) = chunk.get(USAGE) {

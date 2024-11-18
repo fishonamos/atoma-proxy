@@ -758,6 +758,51 @@ pub(crate) async fn handle_state_manager_event(
         } => {
             handle_stack_created_event(state_manager, event, already_computed_units).await?;
         }
+        AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+            node_small_id,
+            input_tokens,
+            output_tokens,
+            time,
+        } => {
+            state_manager
+                .state
+                .update_node_throughput_performance(
+                    node_small_id,
+                    input_tokens,
+                    output_tokens,
+                    time,
+                )
+                .await?;
+        }
+        AtomaAtomaStateManagerEvent::UpdateNodePrefillPerformance {
+            node_small_id,
+            tokens,
+            time,
+        } => {
+            state_manager
+                .state
+                .update_node_prefill_performance(node_small_id, tokens, time)
+                .await?;
+        }
+        AtomaAtomaStateManagerEvent::UpdateNodeDecodePerformance {
+            node_small_id,
+            tokens,
+            time,
+        } => {
+            state_manager
+                .state
+                .update_node_decode_performance(node_small_id, tokens, time)
+                .await?;
+        }
+        AtomaAtomaStateManagerEvent::UpdateNodeLatencyPerformance {
+            node_small_id,
+            latency,
+        } => {
+            state_manager
+                .state
+                .update_node_latency_performance(node_small_id, latency)
+                .await?;
+        }
     }
     Ok(())
 }

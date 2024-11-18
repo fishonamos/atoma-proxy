@@ -2166,6 +2166,220 @@ impl AtomaState {
         .await?;
         Ok(address)
     }
+
+    /// Updates the throughput performance of a node.
+    ///
+    /// This method updates the `node_throughput_performance` table with the throughput performance of a node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node.
+    /// * `input_tokens` - The number of input tokens processed by the node.
+    /// * `output_tokens` - The number of output tokens processed by the node.
+    /// * `time` - The time taken to process the tokens.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_performance(state_manager: &AtomaStateManager, node_small_id: i64, input_tokens: i64, output_tokens: i64, time: f64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_throughput_performance(node_small_id, input_tokens, output_tokens, time).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%node_small_id, %input_tokens, %output_tokens, %time))]
+    pub async fn update_node_throughput_performance(
+        &self,
+        node_small_id: i64,
+        input_tokens: i64,
+        output_tokens: i64,
+        time: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_throughput_performance 
+                (node_small_id, queries, input_tokens, output_tokens, time) 
+                VALUES ($1, $2, $3, $4, $5) 
+                ON CONFLICT (node_small_id)
+                DO UPDATE SET queries = node_throughput_performance.queries + EXCLUDED.queries, 
+                              input_tokens = node_throughput_performance.input_tokens + EXCLUDED.input_tokens,
+                              output_tokens = node_throughput_performance.output_tokens + EXCLUDED.output_tokens,
+                              time = node_throughput_performance.time + EXCLUDED.time",
+        )
+        .bind(node_small_id)
+        .bind(1)
+        .bind(input_tokens)
+        .bind(output_tokens)
+        .bind(time)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates the prefill performance of a node.
+    ///
+    /// This method updates the `node_prefill_performance` table with the prefill performance of a node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node.
+    /// * `input_tokens` - The number of input tokens processed by the node.
+    /// * `output_tokens` - The number of output tokens processed by the node.
+    /// * `time` - The time taken to process the tokens.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_performance(state_manager: &AtomaStateManager, node_small_id: i64, input_tokens: i64, output_tokens: i64, time: f64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_prefill_performance(node_small_id, input_tokens, output_tokens, time).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%node_small_id, %tokens, %time))]
+    pub async fn update_node_prefill_performance(
+        &self,
+        node_small_id: i64,
+        tokens: i64,
+        time: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_prefill_performance 
+                (node_small_id, queries, tokens, time) 
+                VALUES ($1, $2, $3, $4) 
+                ON CONFLICT (node_small_id)
+                DO UPDATE SET queries = node_prefill_performance.queries + EXCLUDED.queries, 
+                              tokens = node_prefill_performance.tokens + EXCLUDED.tokens,
+                              time = node_prefill_performance.time + EXCLUDED.time",
+        )
+        .bind(node_small_id)
+        .bind(1)
+        .bind(tokens)
+        .bind(time)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates the decode performance of a node.
+    ///
+    /// This method updates the `node_decode_performance` table with the decode performance of a node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node.
+    /// * `input_tokens` - The number of input tokens processed by the node.
+    /// * `output_tokens` - The number of output tokens processed by the node.
+    /// * `time` - The time taken to process the tokens.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_performance(state_manager: &AtomaStateManager, node_small_id: i64, input_tokens: i64, output_tokens: i64, time: f64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_decode_performance(node_small_id, input_tokens, output_tokens, time).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%node_small_id, %tokens, %time))]
+    pub async fn update_node_decode_performance(
+        &self,
+        node_small_id: i64,
+        tokens: i64,
+        time: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_decode_performance 
+                (node_small_id, queries, tokens, time) 
+                VALUES ($1, $2, $3, $4) 
+                ON CONFLICT (node_small_id)
+                DO UPDATE SET queries = node_decode_performance.queries + EXCLUDED.queries, 
+                              tokens = node_decode_performance.tokens + EXCLUDED.tokens,
+                              time = node_decode_performance.time + EXCLUDED.time",
+        )
+        .bind(node_small_id)
+        .bind(1)
+        .bind(tokens)
+        .bind(time)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates the latency performance of a node.
+    ///
+    /// This method updates the `node_latency_performance` table with the latency performance of a node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node.
+    /// * `latency` - The latency of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_latency_performance(state_manager: &AtomaStateManager, node_small_id: i64, latency: f64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_latency_performance(node_small_id, latency).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%node_small_id, %latency))]
+    pub async fn update_node_latency_performance(
+        &self,
+        node_small_id: i64,
+        latency: f64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_latency_performance 
+                (node_small_id, queries, latency) 
+                VALUES ($1, $2, $3) 
+                ON CONFLICT (node_small_id)
+                DO UPDATE SET queries = node_latency_performance.queries + EXCLUDED.queries,
+                              latency = node_latency_performance.latency + EXCLUDED.latency",
+        )
+        .bind(node_small_id)
+        .bind(1)
+        .bind(latency)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
@@ -2465,6 +2679,87 @@ pub(crate) mod queries {
         Ok(())
     }
 
+    /// Creates the `node_throughput_performance` and `node_latency_performance` tables in the database.
+    ///
+    /// This function creates two tables in the database:
+    /// - `node_throughput_performance`: Stores the throughput performance of nodes.
+    /// - `node_latency_performance`: Stores the latency performance of nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `db` - A reference to the Postgres database pool.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the tables are created successfully, or an error if any operation fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the SQL queries fail to execute.
+    /// Possible reasons for failure include:
+    /// - Database connection issues
+    /// - Insufficient permissions
+    /// - Syntax errors in the SQL queries
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use sqlx::PgPool;
+    /// use atoma_node::atoma_state::queries;
+    ///
+    /// async fn setup_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    ///     queries::create_nodes_performance(pool).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub(crate) async fn create_nodes_performance(db: &PgPool) -> Result<()> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS node_throughput_performance (
+                node_small_id BIGINT PRIMARY KEY,
+                queries BIGINT NOT NULL,
+                input_tokens BIGINT NOT NULL,
+                output_tokens BIGINT NOT NULL,
+                time DOUBLE PRECISION NOT NULL,
+                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
+            )",
+        )
+        .execute(db)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS node_prefill_performance (
+                node_small_id BIGINT PRIMARY KEY,
+                queries BIGINT NOT NULL,
+                tokens BIGINT NOT NULL,
+                time DOUBLE PRECISION NOT NULL,
+                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
+            )",
+        )
+        .execute(db)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS node_decode_performance (
+                node_small_id BIGINT PRIMARY KEY,
+                queries BIGINT NOT NULL,
+                tokens BIGINT NOT NULL,
+                time DOUBLE PRECISION NOT NULL,
+                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
+            )",
+        )
+        .execute(db)
+        .await?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS node_latency_performance (
+                node_small_id BIGINT PRIMARY KEY,
+                queries BIGINT NOT NULL,
+                latency DOUBLE PRECISION NOT NULL,
+                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
+            )",
+        )
+        .execute(db)
+        .await?;
+        Ok(())
+    }
+
     /// Creates all the necessary tables in the database.
     ///
     /// This function executes SQL queries to create the following tables:
@@ -2509,6 +2804,7 @@ pub(crate) mod queries {
         create_stack_settlement_tickets(db).await?;
         create_stack_attestation_disputes(db).await?;
         create_nodes_public_addresses(db).await?;
+        create_nodes_performance(db).await?;
 
         Ok(())
     }

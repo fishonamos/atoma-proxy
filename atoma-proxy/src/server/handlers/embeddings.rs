@@ -108,20 +108,27 @@ pub async fn embeddings_handler(
 ) -> Result<Response<Body>, StatusCode> {
     let request_model = RequestModelEmbeddings::new(&payload)?;
 
-    let (node_address, signature, selected_stack_small_id, headers, estimated_total_tokens) =
-        authenticate_and_process(
-            request_model,
-            &state,
-            headers,
-            &payload,
-            STACK_ENTRY_COMPUTE_UNITS,
-            STACK_ENTRY_PRICE,
-        )
-        .await?;
+    let (
+        node_address,
+        node_id,
+        signature,
+        selected_stack_small_id,
+        headers,
+        estimated_total_tokens,
+    ) = authenticate_and_process(
+        request_model,
+        &state,
+        headers,
+        &payload,
+        STACK_ENTRY_COMPUTE_UNITS,
+        STACK_ENTRY_PRICE,
+    )
+    .await?;
 
     handle_embeddings_response(
         state,
         node_address,
+        node_id,
         signature,
         selected_stack_small_id,
         headers,
@@ -143,6 +150,7 @@ pub async fn embeddings_handler(
 async fn handle_embeddings_response(
     state: ProxyState,
     node_address: String,
+    node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
@@ -191,6 +199,8 @@ async fn handle_embeddings_response(
         error!("Error updating state manager: {}", e);
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
+
+    //TODO: Update node throughput performance
 
     Ok(response.into_response())
 }

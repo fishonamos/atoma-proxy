@@ -244,4 +244,24 @@ pub enum AtomaAtomaStateManagerEvent {
         event: StackCreatedEvent,
         already_computed_units: i64,
     },
+    UpdateNodeThroughputPerformance {
+        node_small_id: i64,
+        input_tokens: i64,
+        output_tokens: i64,
+        time: f64,
+    },
+    UpdateNodePrefillPerformance {
+        node_small_id: i64,
+        tokens: i64,
+        time: f64,
+    },
+    UpdateNodeDecodePerformance {
+        node_small_id: i64,
+        tokens: i64,
+        time: f64,
+    },
+    UpdateNodeLatencyPerformance {
+        node_small_id: i64,
+        latency: f64,
+    },
 }

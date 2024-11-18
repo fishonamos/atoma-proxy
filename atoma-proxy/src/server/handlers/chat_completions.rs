@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
@@ -166,20 +166,27 @@ pub async fn chat_completions_handler(
             "include_usage": true
         });
     }
-    let (node_address, signature, selected_stack_small_id, headers, estimated_total_tokens) =
-        authenticate_and_process(
-            request_model,
-            &state,
-            headers,
-            &payload,
-            STACK_ENTRY_COMPUTE_UNITS,
-            STACK_ENTRY_PRICE,
-        )
-        .await?;
+    let (
+        node_address,
+        node_id,
+        signature,
+        selected_stack_small_id,
+        headers,
+        estimated_total_tokens,
+    ) = authenticate_and_process(
+        request_model,
+        &state,
+        headers,
+        &payload,
+        STACK_ENTRY_COMPUTE_UNITS,
+        STACK_ENTRY_PRICE,
+    )
+    .await?;
     if is_streaming {
         handle_streaming_response(
             state,
             node_address,
+            node_id,
             signature,
             selected_stack_small_id,
             headers,
@@ -191,6 +198,7 @@ pub async fn chat_completions_handler(
         handle_non_streaming_response(
             state,
             node_address,
+            node_id,
             signature,
             selected_stack_small_id,
             headers,
@@ -252,9 +260,11 @@ pub async fn chat_completions_handler(
         payload_hash
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_non_streaming_response(
     state: ProxyState,
     node_address: String,
+    node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
@@ -262,6 +272,7 @@ async fn handle_non_streaming_response(
     estimated_total_tokens: i64,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
+    let time = Instant::now();
     let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
@@ -291,6 +302,20 @@ async fn handle_non_streaming_response(
         .map(|n| n as i64)
         .unwrap_or(0);
 
+    let input_tokens = response
+        .get("usage")
+        .and_then(|usage| usage.get("completion_tokens"))
+        .and_then(|total_tokens| total_tokens.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
+    let output_tokens = response
+        .get("usage")
+        .and_then(|usage| usage.get("prompt_tokens"))
+        .and_then(|total_tokens| total_tokens.as_u64())
+        .map(|n| n as i64)
+        .unwrap_or(0);
+
     // NOTE: We need to update the stack num tokens, because the inference response might have produced
     // less tokens than estimated what we initially estimated, from the middleware.
     if let Err(e) = utils::update_state_manager(
@@ -304,6 +329,21 @@ async fn handle_non_streaming_response(
         error!("Error updating state manager: {}", e);
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
+
+    state
+        .state_manager_sender
+        .send(
+            AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                node_small_id: node_id,
+                input_tokens,
+                output_tokens,
+                time: time.elapsed().as_secs_f64(),
+            },
+        )
+        .map_err(|err| {
+            error!("Error updating node throughput performance: {}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(response.into_response())
 }
@@ -353,9 +393,11 @@ async fn handle_non_streaming_response(
         payload_hash
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_streaming_response(
     state: ProxyState,
     node_address: String,
+    node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
@@ -367,6 +409,7 @@ async fn handle_streaming_response(
     // that were processed for this request.
 
     let client = reqwest::Client::new();
+    let start = Instant::now();
     let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
@@ -394,6 +437,8 @@ async fn handle_streaming_response(
         state.state_manager_sender,
         selected_stack_small_id,
         estimated_total_tokens,
+        start,
+        node_id,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()

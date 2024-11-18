@@ -32,7 +32,7 @@ async fn authenticate_and_process(
     payload: &Value,
     stack_entry_compute_units: u64,
     stack_entry_price: u64,
-) -> Result<(String, String, i64, HeaderMap, u64), StatusCode> {
+) -> Result<(String, i64, String, i64, HeaderMap, u64), StatusCode> {
     // Authenticate
     if !check_auth(&state.password, &headers) {
         return Err(StatusCode::UNAUTHORIZED);
@@ -97,6 +97,7 @@ async fn authenticate_and_process(
 
     Ok((
         node_address,
+        selected_node_id,
         signature,
         selected_stack_small_id,
         headers,
