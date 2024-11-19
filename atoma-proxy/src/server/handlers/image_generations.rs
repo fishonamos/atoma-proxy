@@ -1,3 +1,6 @@
+use std::time::Instant;
+
+use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,20 +14,22 @@ use crate::server::http_server::ProxyState;
 use super::authenticate_and_process;
 use super::request_model::RequestModel;
 
+/// A model representing the parameters for an image generation request.
+///
+/// This struct encapsulates the required parameters for generating images through
+/// the API endpoint.
 pub struct RequestModelImageGenerations {
+    /// The identifier of the AI model to use for image generation
     model: String,
+    /// The number of sampling generation to be performed for this request
     n: u64,
+    /// The desired dimensions of the generated images in the format "WIDTHxHEIGHT"
+    /// (e.g., "1024x1024")
     size: String,
 }
 
 /// Path for the image generations endpoint.
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
-
-// The default value when creating a new stack entry.
-const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
-
-// The default price for a new stack entry.
-const STACK_ENTRY_PRICE: u64 = 100;
 
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
@@ -78,7 +83,35 @@ impl RequestModel for RequestModelImageGenerations {
     }
 }
 
-/// Handles the image generations request.
+/// Handles incoming requests for AI image generation.
+///
+/// This endpoint processes requests to generate images using AI models. It performs the following steps:
+/// 1. Validates and parses the incoming request payload
+/// 2. Authenticates the request and processes billing/compute units
+/// 3. Forwards the request to the appropriate AI node for image generation
+///
+/// # Arguments
+/// * `state` - Application state containing configuration and shared resources
+/// * `headers` - HTTP headers from the incoming request
+/// * `payload` - JSON payload containing image generation parameters (model, size, number of images)
+///
+/// # Returns
+/// * `Result<Response<Body>, StatusCode>` - Either a successful response containing the generated
+///   images or an error status code
+///
+/// # Errors
+/// * `BAD_REQUEST` - If the request payload is invalid or missing required fields
+/// * `UNAUTHORIZED` - If authentication fails
+/// * `INTERNAL_SERVER_ERROR` - If there's an error processing the request or communicating with the AI node
+///
+/// # Example Payload
+/// ```json
+/// {
+///     "model": "stable-diffusion-v1-5",
+///     "n": 1,
+///     "size": "1024x1024"
+/// }
+/// ```
 #[utoipa::path(
     post,
     path = IMAGE_GENERATIONS_PATH,
@@ -101,36 +134,51 @@ pub async fn image_generations_handler(
 ) -> Result<Response<Body>, StatusCode> {
     let request_model = RequestModelImageGenerations::new(&payload)?;
 
-    let (
-        node_address,
-        node_id,
-        signature,
-        selected_stack_small_id,
-        headers,
-        estimated_total_tokens,
-    ) = authenticate_and_process(
-        request_model,
-        &state,
-        headers,
-        &payload,
-        STACK_ENTRY_COMPUTE_UNITS,
-        STACK_ENTRY_PRICE,
-    )
-    .await?;
+    let (node_address, selected_node_id, signature, selected_stack_small_id, headers, total_tokens) =
+        authenticate_and_process(request_model, &state, headers, &payload).await?;
 
     handle_image_generation_response(
         state,
         node_address,
-        node_id,
+        selected_node_id,
         signature,
         selected_stack_small_id,
         headers,
         payload,
-        estimated_total_tokens as i64,
+        total_tokens as i64,
     )
     .await
 }
 
+/// Handles the response processing for image generation requests.
+///
+/// This function is responsible for forwarding the image generation request to the appropriate AI node
+/// and processing its response. It performs the following steps:
+/// 1. Creates an HTTP client
+/// 2. Forwards the request to the AI node with appropriate headers
+/// 3. Processes the response and handles any errors
+///
+/// # Arguments
+/// * `_state` - Application state containing configuration and shared resources (currently unused)
+/// * `node_address` - The base URL of the AI node to send the request to
+/// * `node_id` - Unique identifier of the target AI node
+/// * `signature` - Authentication signature for the request
+/// * `selected_stack_small_id` - Identifier for the billing stack entry
+/// * `headers` - HTTP headers to forward with the request
+/// * `payload` - The original image generation request payload
+/// * `_estimated_total_tokens` - Estimated computational cost (currently unused)
+///
+/// # Returns
+/// * `Result<Response<Body>, StatusCode>` - The processed response from the AI node or an error status
+///
+/// # Errors
+/// * Returns `INTERNAL_SERVER_ERROR` (500) if:
+///   - The request to the AI node fails
+///   - The response cannot be parsed as valid JSON
+///
+/// # Note
+/// This function is instrumented with tracing to log important metrics and debug information.
+/// There is a pending TODO to implement node throughput performance tracking.
 #[instrument(
     level = "info",
     skip_all,
@@ -140,17 +188,20 @@ pub async fn image_generations_handler(
         estimated_total_tokens
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_image_generation_response(
-    _state: ProxyState,
+    state: ProxyState,
     node_address: String,
-    node_id: i64,
+    selected_node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
-    _estimated_total_tokens: i64,
+    total_tokens: i64,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
+    let time = Instant::now();
+    // Send the request to the AI node
     let response = client
         .post(format!("{}{}", node_address, IMAGE_GENERATIONS_PATH))
         .headers(headers)
@@ -172,7 +223,21 @@ async fn handle_image_generation_response(
         })
         .map(Json)?;
 
-    //TODO: Update node throughput performance
+    // Update the node throughput performance
+    state
+        .state_manager_sender
+        .send(
+            AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                node_small_id: selected_node_id,
+                input_tokens: 0,
+                output_tokens: total_tokens,
+                time: time.elapsed().as_secs_f64(),
+            },
+        )
+        .map_err(|err| {
+            error!("Failed to update node throughput performance: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(response.into_response())
 }

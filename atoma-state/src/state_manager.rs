@@ -1,7 +1,7 @@
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
-    AtomaAtomaStateManagerEvent, NodeSubscription, Stack, StackAttestationDispute,
+    AtomaAtomaStateManagerEvent, CheapestNode, NodeSubscription, Stack, StackAttestationDispute,
     StackSettlementTicket, Task,
 };
 
@@ -282,6 +282,50 @@ impl AtomaState {
             .into_iter()
             .map(|task| Task::from_row(&task).map_err(AtomaStateManagerError::from))
             .collect()
+    }
+
+    /// Get node settings for model with the cheapest price (based on the current node subscription).
+    ///
+    /// This method fetches the task from the database that is associated with
+    /// the given model through the `tasks` table and has the cheapest price per compute unit.
+    /// The price is determined based on the node subscription for the task.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model name for the task.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<CheapestNode>>>`: A result containing either:
+    ///  - `Ok(Some<CheapestNode>)`: A `CheapestNode` object representing the node setting with the cheapest price.
+    ///  - `Ok(None)`: If no task is found for the given model.
+    ///  - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the database query fails.
+    #[instrument(level = "trace", skip_all, fields(%model))]
+    pub async fn get_cheapest_node_for_model(&self, model: &str) -> Result<Option<CheapestNode>> {
+        let node_settings = sqlx::query(
+            "SELECT tasks.task_small_id, price_per_compute_unit, max_num_compute_units 
+            FROM (SELECT * 
+                  FROM tasks 
+                  WHERE is_deprecated=false
+                    AND model_name = $1) AS tasks 
+            JOIN (SELECT * 
+                  FROM node_subscriptions
+                  WHERE valid = true) AS node_subscriptions 
+            ON tasks.task_small_id=node_subscriptions.task_small_id 
+            ORDER BY node_subscriptions.price_per_compute_unit 
+            LIMIT 1",
+        )
+        .bind(model)
+        .bind(false)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(node_settings
+            .map(|node_settings| CheapestNode::from_row(&node_settings))
+            .transpose()?)
     }
 
     /// Retrieves all tasks from the database.

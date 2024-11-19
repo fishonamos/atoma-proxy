@@ -27,14 +27,6 @@ pub struct RequestModelChatCompletions {
 /// and is used to process chat-based requests for AI model inference.
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
-// The default value when creating a new stack entry.
-// TODO: Make this configurable or compute from the available stacks subscriptions.
-const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
-
-// The default price for a new stack entry.
-// TODO: Make this configurable or compute from the available stacks subscriptions.
-const STACK_ENTRY_PRICE: u64 = 100;
-
 /// The interval for the keep-alive message in the SSE stream.
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
@@ -168,25 +160,17 @@ pub async fn chat_completions_handler(
     }
     let (
         node_address,
-        node_id,
+        selected_node_id,
         signature,
         selected_stack_small_id,
         headers,
         estimated_total_tokens,
-    ) = authenticate_and_process(
-        request_model,
-        &state,
-        headers,
-        &payload,
-        STACK_ENTRY_COMPUTE_UNITS,
-        STACK_ENTRY_PRICE,
-    )
-    .await?;
+    ) = authenticate_and_process(request_model, &state, headers, &payload).await?;
     if is_streaming {
         handle_streaming_response(
             state,
             node_address,
-            node_id,
+            selected_node_id,
             signature,
             selected_stack_small_id,
             headers,
@@ -198,7 +182,7 @@ pub async fn chat_completions_handler(
         handle_non_streaming_response(
             state,
             node_address,
-            node_id,
+            selected_node_id,
             signature,
             selected_stack_small_id,
             headers,
@@ -264,7 +248,7 @@ pub async fn chat_completions_handler(
 async fn handle_non_streaming_response(
     state: ProxyState,
     node_address: String,
-    node_id: i64,
+    selected_node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
@@ -334,7 +318,7 @@ async fn handle_non_streaming_response(
         .state_manager_sender
         .send(
             AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
-                node_small_id: node_id,
+                node_small_id: selected_node_id,
                 input_tokens,
                 output_tokens,
                 time: time.elapsed().as_secs_f64(),

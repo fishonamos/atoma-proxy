@@ -30,25 +30,22 @@ async fn authenticate_and_process(
     state: &ProxyState,
     headers: HeaderMap,
     payload: &Value,
-    stack_entry_compute_units: u64,
-    stack_entry_price: u64,
 ) -> Result<(String, i64, String, i64, HeaderMap, u64), StatusCode> {
     // Authenticate
     if !check_auth(&state.password, &headers) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Estimate compute units
+    // Estimate compute units and the request model
+    let model = request_model.get_model()?;
     let total_compute_units = request_model.get_compute_units_estimate(state)?;
 
     // Get node selection
     let (selected_stack_small_id, selected_node_id) = get_selected_node(
-        &request_model.get_model()?,
+        &model,
         &state.state_manager_sender,
         &state.sui,
         total_compute_units,
-        stack_entry_compute_units,
-        stack_entry_price,
     )
     .await?;
 
@@ -185,16 +182,14 @@ async fn get_selected_node(
     model: &str,
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     sui: &Arc<RwLock<Sui>>,
-    total_compute_units: u64,
-    stack_entry_compute_units: u64,
-    stack_entry_price: u64,
+    total_tokens: u64,
 ) -> Result<(i64, i64), StatusCode> {
     let (result_sender, result_receiver) = oneshot::channel();
 
     state_manager_sender
         .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
             model: model.to_string(),
-            free_compute_units: total_compute_units as i64,
+            free_compute_units: total_tokens as i64,
             result_sender,
         })
         .map_err(|err| {
@@ -216,7 +211,7 @@ async fn get_selected_node(
     if stacks.is_empty() {
         let (result_sender, result_receiver) = oneshot::channel();
         state_manager_sender
-            .send(AtomaAtomaStateManagerEvent::GetTasksForModel {
+            .send(AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
                 model: model.to_string(),
                 result_sender,
             })
@@ -224,7 +219,7 @@ async fn get_selected_node(
                 error!("Failed to send GetTasksForModel event: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        let tasks = result_receiver
+        let node = result_receiver
             .await
             .map_err(|err| {
                 error!("Failed to receive GetTasksForModel result: {:?}", err);
@@ -234,22 +229,20 @@ async fn get_selected_node(
                 error!("Failed to get GetTasksForModel result: {:?}", err);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        if tasks.is_empty() {
-            error!("No tasks found for model {}", model);
-            return Err(StatusCode::NOT_FOUND);
-        }
-        // TODO: What should be the default values for the stack entry/price?
-        if total_compute_units > stack_entry_compute_units {
-            error!("Total tokens exceeds maximum limit of {stack_entry_compute_units}");
-            return Err(StatusCode::BAD_REQUEST);
-        }
+        let node: atoma_state::types::CheapestNode = match node {
+            Some(node) => node,
+            None => {
+                error!("No tasks found for model {}", model);
+                return Err(StatusCode::NOT_FOUND);
+            }
+        };
         let event = sui
             .write()
             .await
             .acquire_new_stack_entry(
-                tasks[0].task_small_id as u64,
-                stack_entry_compute_units,
-                stack_entry_price,
+                node.task_small_id as u64,
+                node.max_num_compute_units as u64,
+                node.price_per_compute_unit as u64,
             )
             .await
             .map_err(|err| {
@@ -264,7 +257,7 @@ async fn get_selected_node(
         state_manager_sender
             .send(AtomaAtomaStateManagerEvent::NewStackAcquired {
                 event,
-                already_computed_units: total_compute_units as i64,
+                already_computed_units: total_tokens as i64,
             })
             .map_err(|err| {
                 error!("Failed to send NewStackAcquired event: {:?}", err);

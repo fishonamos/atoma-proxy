@@ -1,3 +1,6 @@
+use std::time::Instant;
+
+use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::{
     body::Body,
     extract::State,
@@ -13,8 +16,14 @@ use crate::server::http_server::ProxyState;
 
 use super::{authenticate_and_process, request_model::RequestModel};
 
+// A model representing an embeddings request payload.
+///
+/// This struct encapsulates the necessary fields for processing an embeddings request
+/// following the OpenAI API format.
 pub struct RequestModelEmbeddings {
+    /// The name of the model to use for generating embeddings (e.g., "text-embedding-ada-002")
     model: String,
+    /// The input text to generate embeddings for
     input: String,
 }
 
@@ -23,10 +32,6 @@ pub struct RequestModelEmbeddings {
 /// This endpoint follows the OpenAI API format for embeddings
 /// and is used to generate vector embeddings for input text.
 pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
-
-// The default value when creating a new stack entry.
-const STACK_ENTRY_COMPUTE_UNITS: u64 = 1000;
-const STACK_ENTRY_PRICE: u64 = 100;
 
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]
@@ -78,14 +83,38 @@ impl RequestModel for RequestModelEmbeddings {
     }
 }
 
-/// Handles the embeddings request.
+/// Handles incoming embeddings requests by authenticating, processing, and forwarding them to the appropriate node.
 ///
-/// This function processes embeddings requests by:
-/// 1) Authenticating the request
-/// 2) Getting the model from the payload
-/// 3) Selecting an appropriate node/stack
-/// 4) Forwarding the request to the selected node
-/// 5) Returning the embeddings response
+/// This endpoint follows the OpenAI API format for generating vector embeddings from input text.
+/// The handler performs several key operations:
+///
+/// 1. Authentication and validation:
+///    - Validates the API key and permissions
+///    - Ensures the request payload is properly formatted
+///
+/// 2. Request processing:
+///    - Extracts and validates the model name
+///    - Parses the input text for embedding generation
+///    - Estimates token usage for billing purposes
+///
+/// 3. Node selection and routing:
+///    - Selects an appropriate processing node based on load and availability
+///    - Forwards the request to the chosen node
+///    - Handles node communication and response processing
+///
+/// # Arguments
+/// * `state` - The shared proxy state containing configuration and runtime information
+/// * `headers` - HTTP headers from the incoming request, including authentication
+/// * `payload` - The JSON request body containing the model and input text
+///
+/// # Returns
+/// * `Ok(Response)` - The embeddings response from the processing node
+/// * `Err(StatusCode)` - An error status code if any step fails
+///
+/// # Errors
+/// * `BAD_REQUEST` - Invalid payload format or unsupported model
+/// * `UNAUTHORIZED` - Invalid or missing authentication
+/// * `INTERNAL_SERVER_ERROR` - Processing or node communication failures
 #[utoipa::path(
     post,
     path = EMBEDDINGS_PATH,
@@ -114,16 +143,8 @@ pub async fn embeddings_handler(
         signature,
         selected_stack_small_id,
         headers,
-        estimated_total_tokens,
-    ) = authenticate_and_process(
-        request_model,
-        &state,
-        headers,
-        &payload,
-        STACK_ENTRY_COMPUTE_UNITS,
-        STACK_ENTRY_PRICE,
-    )
-    .await?;
+        num_input_compute_units,
+    ) = authenticate_and_process(request_model, &state, headers, &payload).await?;
 
     handle_embeddings_response(
         state,
@@ -133,11 +154,37 @@ pub async fn embeddings_handler(
         selected_stack_small_id,
         headers,
         payload,
-        estimated_total_tokens as i64,
+        num_input_compute_units as i64,
     )
     .await
 }
 
+/// Handles the response processing for embeddings requests by forwarding them to AI nodes and managing performance metrics.
+///
+/// This function is responsible for:
+/// 1. Forwarding the embeddings request to the selected AI node
+/// 2. Processing the node's response
+/// 3. Updating performance metrics for the node
+///
+/// # Arguments
+/// * `state` - The shared proxy state containing configuration and runtime information
+/// * `node_address` - The URL of the selected AI node
+/// * `selected_node_id` - The unique identifier of the selected node
+/// * `signature` - Authentication signature for the node request
+/// * `selected_stack_small_id` - The identifier for the selected processing stack
+/// * `headers` - HTTP headers to forward with the request
+/// * `payload` - The JSON request body containing the embeddings request
+/// * `num_input_compute_units` - The number of compute units (tokens) in the input
+///
+/// # Returns
+/// * `Ok(Response<Body>)` - The processed embeddings response from the AI node
+/// * `Err(StatusCode)` - An error status code if any step fails
+///
+/// # Errors
+/// * Returns `INTERNAL_SERVER_ERROR` if:
+///   - The request to the AI node fails
+///   - The response parsing fails
+///   - Updating node performance metrics fails
 #[instrument(
     level = "info",
     skip_all,
@@ -147,17 +194,20 @@ pub async fn embeddings_handler(
         estimated_total_tokens
     )
 )]
+#[allow(clippy::too_many_arguments)]
 async fn handle_embeddings_response(
     state: ProxyState,
     node_address: String,
-    node_id: i64,
+    selected_node_id: i64,
     signature: String,
     selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
-    estimated_total_tokens: i64,
+    num_input_compute_units: i64,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
+    let time = Instant::now();
+    // Send the request to the AI node
     let response = client
         .post(format!("{}{}", node_address, EMBEDDINGS_PATH))
         .headers(headers)
@@ -179,28 +229,21 @@ async fn handle_embeddings_response(
         })
         .map(Json)?;
 
-    // Extract the total tokens from the response
-    let total_tokens = response
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-        .and_then(|total_tokens| total_tokens.as_u64())
-        .map(|n| n as i64)
-        .unwrap_or(0);
-
-    // Update the state manager with the actual token usage
-    if let Err(e) = super::chat_completions::utils::update_state_manager(
-        &state,
-        selected_stack_small_id,
-        estimated_total_tokens,
-        total_tokens,
-    )
-    .await
-    {
-        error!("Error updating state manager: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    //TODO: Update node throughput performance
+    // Update the node throughput performance
+    state
+        .state_manager_sender
+        .send(
+            AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                node_small_id: selected_node_id,
+                input_tokens: num_input_compute_units,
+                output_tokens: 0,
+                time: time.elapsed().as_secs_f64(),
+            },
+        )
+        .map_err(|err| {
+            error!("Failed to update node throughput performance: {:?}", err);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(response.into_response())
 }
