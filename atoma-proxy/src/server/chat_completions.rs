@@ -683,7 +683,6 @@ pub struct SelectedNodeMetadata {
     pub tx_digest: Option<TransactionDigest>,
 }
 
-
 /// Selects a node for processing a model request by either finding an existing stack or acquiring a new one.
 ///
 /// This function follows a two-step process:
