@@ -6,13 +6,14 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
+use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
 use crate::server::http_server::ProxyState;
 
-use super::authenticate_and_process;
 use super::request_model::RequestModel;
+use super::{authenticate_and_process, ProcessedRequest};
 
 /// A model representing the parameters for an image generation request.
 ///
@@ -134,8 +135,15 @@ pub async fn image_generations_handler(
 ) -> Result<Response<Body>, StatusCode> {
     let request_model = RequestModelImageGenerations::new(&payload)?;
 
-    let (node_address, selected_node_id, signature, selected_stack_small_id, headers, total_tokens) =
-        authenticate_and_process(request_model, &state, headers, &payload).await?;
+    let ProcessedRequest {
+        node_address,
+        node_id: selected_node_id,
+        signature,
+        stack_small_id: selected_stack_small_id,
+        headers,
+        num_compute_units: total_tokens,
+        tx_digest,
+    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
 
     handle_image_generation_response(
         state,
@@ -146,6 +154,7 @@ pub async fn image_generations_handler(
         headers,
         payload,
         total_tokens as i64,
+        tx_digest,
     )
     .await
 }
@@ -198,15 +207,22 @@ async fn handle_image_generation_response(
     headers: HeaderMap,
     payload: Value,
     total_tokens: i64,
+    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
-    let response = client
+    let req_builder = client
         .post(format!("{}{}", node_address, IMAGE_GENERATIONS_PATH))
         .headers(headers)
         .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
+        .header("X-Stack-Small-Id", selected_stack_small_id);
+    let req_builder = if let Some(tx_digest) = tx_digest {
+        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
+    } else {
+        req_builder
+    };
+    let response = req_builder
         .header("Content-Length", payload.to_string().len())
         .json(&payload)
         .send()

@@ -2,16 +2,39 @@ pub mod chat_completions;
 pub mod embeddings;
 pub mod image_generations;
 pub mod request_model;
-use crate::server::http_server::ProxyState;
 use crate::sui::Sui;
+use crate::{server::http_server::ProxyState, sui::StackEntryResponse};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
 use flume::Sender;
 use request_model::RequestModel;
 use serde_json::Value;
 use std::sync::Arc;
+use sui_sdk::types::digests::TransactionDigest;
 use tokio::sync::{oneshot, RwLock};
 use tracing::{error, instrument};
+
+/// Represents the processed and validated request data after authentication and initial processing.
+///
+/// This struct contains all the necessary information needed to forward a request to an inference node,
+/// including authentication details, routing information, and request metadata.
+#[derive(Debug)]
+pub struct ProcessedRequest {
+    /// The public address of the selected inference node
+    pub node_address: String,
+    /// The unique identifier for the selected node
+    pub node_id: i64,
+    /// The authentication signature for the request
+    pub signature: String,
+    /// The unique identifier for the selected stack
+    pub stack_small_id: i64,
+    /// HTTP headers to be forwarded with the request, excluding sensitive authentication headers
+    pub headers: HeaderMap,
+    /// The estimated number of compute units for this request (input + output)
+    pub num_compute_units: u64,
+    /// Optional transaction digest from stack entry creation, if a new stack was acquired
+    pub tx_digest: Option<TransactionDigest>,
+}
 
 /// Authenticates the request and processes initial steps up to signature creation.
 ///
@@ -23,14 +46,29 @@ use tracing::{error, instrument};
 ///
 /// # Returns
 ///
-/// Returns a tuple of (node_address, signature, selected_stack_small_id, headers) if successful
+/// Returns a `ProcessedRequest` containing:
+/// - `node_address`: Public address of the selected inference node
+/// - `node_id`: Unique identifier for the selected node
+/// - `signature`: Sui signature for request authentication
+/// - `stack_small_id`: Identifier for the selected processing stack
+/// - `headers`: Sanitized headers for forwarding (auth headers removed)
+/// - `total_tokens`: Estimated total token usage
+/// - `tx_digest`: Optional transaction digest if a new stack was created
+///
+/// # Errors
+///
+/// Returns `StatusCode` error in the following cases:
+/// - `UNAUTHORIZED`: Invalid or missing authentication
+/// - `BAD_REQUEST`: Invalid payload format or unsupported model
+/// - `NOT_FOUND`: No available node address found
+/// - `INTERNAL_SERVER_ERROR`: Various internal processing failures
 #[instrument(level = "info", skip_all)]
 async fn authenticate_and_process(
     request_model: impl RequestModel,
     state: &ProxyState,
     headers: HeaderMap,
     payload: &Value,
-) -> Result<(String, i64, String, i64, HeaderMap, u64), StatusCode> {
+) -> Result<ProcessedRequest, StatusCode> {
     // Authenticate
     if !check_auth(&state.password, &headers) {
         return Err(StatusCode::UNAUTHORIZED);
@@ -41,7 +79,11 @@ async fn authenticate_and_process(
     let total_compute_units = request_model.get_compute_units_estimate(state)?;
 
     // Get node selection
-    let (selected_stack_small_id, selected_node_id) = get_selected_node(
+    let SelectedNodeMetadata {
+        stack_small_id: selected_stack_small_id,
+        selected_node_id,
+        tx_digest,
+    } = get_selected_node(
         &model,
         &state.state_manager_sender,
         &state.sui,
@@ -92,14 +134,15 @@ async fn authenticate_and_process(
     let mut headers = headers;
     headers.remove(AUTHORIZATION);
 
-    Ok((
+    Ok(ProcessedRequest {
         node_address,
-        selected_node_id,
+        node_id: selected_node_id,
         signature,
-        selected_stack_small_id,
+        stack_small_id: selected_stack_small_id,
         headers,
-        total_compute_units,
-    ))
+        num_compute_units: total_compute_units,
+        tx_digest,
+    })
 }
 
 /// Checks the authentication of the request.
@@ -138,6 +181,17 @@ fn check_auth(password: &str, headers: &HeaderMap) -> bool {
     false
 }
 
+/// Metadata returned when selecting a node for processing a model request
+#[derive(Debug)]
+pub struct SelectedNodeMetadata {
+    /// The small ID of the stack
+    pub stack_small_id: i64,
+    /// The small ID of the selected node
+    pub selected_node_id: i64,
+    /// The transaction digest of the stack entry creation transaction
+    pub tx_digest: Option<TransactionDigest>,
+}
+
 /// Selects a node for processing a model request by either finding an existing stack or acquiring a new one.
 ///
 /// This function follows a two-step process:
@@ -156,9 +210,10 @@ fn check_auth(password: &str, headers: &HeaderMap) -> bool {
 ///
 /// # Returns
 ///
-/// Returns a tuple of `(stack_small_id, selected_node_id)` where:
+/// Returns a `SelectedNodeMetadata` containing:
 /// * `stack_small_id` - The identifier for the selected/created stack
 /// * `selected_node_id` - The identifier for the node that will process the request
+/// * `tx_digest` - Optional transaction digest if a new stack was created
 ///
 /// # Errors
 ///
@@ -170,12 +225,13 @@ fn check_auth(password: &str, headers: &HeaderMap) -> bool {
 /// # Example
 ///
 /// ```no_run
-/// let (stack_id, node_id) = get_selected_node(
+/// let metadata = get_selected_node(
 ///     "gpt-4",
 ///     &state_manager_sender,
 ///     &sui,
 ///     1000
 /// ).await?;
+/// println!("Selected stack ID: {}", metadata.stack_small_id);
 /// ```
 #[instrument(level = "info", skip_all, fields(%model))]
 async fn get_selected_node(
@@ -183,7 +239,7 @@ async fn get_selected_node(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     sui: &Arc<RwLock<Sui>>,
     total_tokens: u64,
-) -> Result<(i64, i64), StatusCode> {
+) -> Result<SelectedNodeMetadata, StatusCode> {
     let (result_sender, result_receiver) = oneshot::channel();
 
     state_manager_sender
@@ -236,7 +292,10 @@ async fn get_selected_node(
                 return Err(StatusCode::NOT_FOUND);
             }
         };
-        let event = sui
+        let StackEntryResponse {
+            transaction_digest: tx_digest,
+            stack_created_event: event,
+        } = sui
             .write()
             .await
             .acquire_new_stack_entry(
@@ -264,8 +323,16 @@ async fn get_selected_node(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        Ok((stack_small_id, selected_node_id))
+        Ok(SelectedNodeMetadata {
+            stack_small_id,
+            selected_node_id,
+            tx_digest: Some(tx_digest),
+        })
     } else {
-        Ok((stacks[0].stack_small_id, stacks[0].selected_node_id))
+        Ok(SelectedNodeMetadata {
+            stack_small_id: stacks[0].stack_small_id,
+            selected_node_id: stacks[0].selected_node_id,
+            tx_digest: None,
+        })
     }
 }

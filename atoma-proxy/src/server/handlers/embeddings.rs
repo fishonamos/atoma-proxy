@@ -9,12 +9,13 @@ use axum::{
     Json,
 };
 use serde_json::Value;
+use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
 use crate::server::http_server::ProxyState;
 
-use super::{authenticate_and_process, request_model::RequestModel};
+use super::{authenticate_and_process, request_model::RequestModel, ProcessedRequest};
 
 // A model representing an embeddings request payload.
 ///
@@ -137,14 +138,15 @@ pub async fn embeddings_handler(
 ) -> Result<Response<Body>, StatusCode> {
     let request_model = RequestModelEmbeddings::new(&payload)?;
 
-    let (
+    let ProcessedRequest {
         node_address,
         node_id,
         signature,
-        selected_stack_small_id,
+        stack_small_id: selected_stack_small_id,
         headers,
-        num_input_compute_units,
-    ) = authenticate_and_process(request_model, &state, headers, &payload).await?;
+        num_compute_units: num_input_compute_units,
+        tx_digest,
+    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
 
     handle_embeddings_response(
         state,
@@ -155,6 +157,7 @@ pub async fn embeddings_handler(
         headers,
         payload,
         num_input_compute_units as i64,
+        tx_digest,
     )
     .await
 }
@@ -204,15 +207,22 @@ async fn handle_embeddings_response(
     headers: HeaderMap,
     payload: Value,
     num_input_compute_units: i64,
+    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
-    let response = client
+    let req_builder = client
         .post(format!("{}{}", node_address, EMBEDDINGS_PATH))
         .headers(headers)
         .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
+        .header("X-Stack-Small-Id", selected_stack_small_id);
+    let req_builder = if let Some(tx_digest) = tx_digest {
+        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
+    } else {
+        req_builder
+    };
+    let response = req_builder
         .header("Content-Length", payload.to_string().len())
         .json(&payload)
         .send()
