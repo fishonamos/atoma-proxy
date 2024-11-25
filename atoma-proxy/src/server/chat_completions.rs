@@ -8,12 +8,13 @@ use axum::response::{IntoResponse, Response, Sse};
 use axum::{extract::State, http::HeaderMap, Json};
 use flume::Sender;
 use serde_json::Value;
+use sui_sdk::types::digests::TransactionDigest;
 use tokenizers::Tokenizer;
 use tokio::sync::{oneshot, RwLock};
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
-use crate::sui::Sui;
+use crate::sui::{StackEntryResponse, Sui};
 
 use super::http_server::ProxyState;
 use super::streamer::Streamer;
@@ -91,14 +92,15 @@ pub async fn chat_completions_handler(
             "include_usage": true
         });
     }
-    let (
+    let ProcessedRequest {
         node_address,
         node_id,
         signature,
-        selected_stack_small_id,
+        stack_small_id: selected_stack_small_id,
         headers,
-        estimated_total_tokens,
-    ) = authenticate_and_process(&state, headers, &payload).await?;
+        total_tokens: estimated_total_tokens,
+        tx_digest,
+    } = authenticate_and_process(&state, headers, &payload).await?;
     if is_streaming {
         handle_streaming_response(
             state,
@@ -109,6 +111,7 @@ pub async fn chat_completions_handler(
             headers,
             payload,
             estimated_total_tokens as i64,
+            tx_digest,
         )
         .await
     } else {
@@ -121,6 +124,7 @@ pub async fn chat_completions_handler(
             headers,
             payload,
             estimated_total_tokens as i64,
+            tx_digest,
         )
         .await
     }
@@ -187,15 +191,22 @@ async fn handle_non_streaming_response(
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
+    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
-    let response = client
+    let req_builder = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
         .header("X-Signature", signature)
         .header("X-Stack-Small-Id", selected_stack_small_id)
-        .header("Content-Length", payload.to_string().len()) // Set the real length of the payload
+        .header("Content-Length", payload.to_string().len()); // Set the real length of the payload
+    let req_builder = if let Some(tx_digest) = tx_digest {
+        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
+    } else {
+        req_builder
+    };
+    let response = req_builder
         .json(&payload)
         .send()
         .await
@@ -320,6 +331,7 @@ async fn handle_streaming_response(
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
+    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -327,11 +339,17 @@ async fn handle_streaming_response(
 
     let client = reqwest::Client::new();
     let start = Instant::now();
-    let response = client
+    let req_builder = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
         .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
+        .header("X-Stack-Small-Id", selected_stack_small_id);
+    let req_builder = if let Some(tx_digest) = tx_digest {
+        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
+    } else {
+        req_builder
+    };
+    let response = req_builder
         .header("Content-Length", payload.to_string().len()) // Set the real length of the payload
         .json(&payload)
         .send()
@@ -366,6 +384,28 @@ async fn handle_streaming_response(
     Ok(stream.into_response())
 }
 
+/// Represents the processed and validated request data after authentication and initial processing.
+///
+/// This struct contains all the necessary information needed to forward a request to an inference node,
+/// including authentication details, routing information, and request metadata.
+#[derive(Debug)]
+pub struct ProcessedRequest {
+    /// The public address of the selected inference node
+    pub node_address: String,
+    /// The unique identifier for the selected node
+    pub node_id: i64,
+    /// The authentication signature for the request
+    pub signature: String,
+    /// The unique identifier for the selected stack
+    pub stack_small_id: i64,
+    /// HTTP headers to be forwarded with the request, excluding sensitive authentication headers
+    pub headers: HeaderMap,
+    /// The estimated total number of tokens for this request (input + output)
+    pub total_tokens: u64,
+    /// Optional transaction digest from stack entry creation, if a new stack was acquired
+    pub tx_digest: Option<TransactionDigest>,
+}
+
 /// Authenticates the request and processes initial steps up to signature creation.
 ///
 /// # Arguments
@@ -376,23 +416,46 @@ async fn handle_streaming_response(
 ///
 /// # Returns
 ///
-/// Returns a tuple of (node_address, signature, selected_stack_small_id, headers) if successful
+/// Returns a `ProcessedRequest` containing:
+/// - `node_address`: Public address of the selected inference node
+/// - `node_id`: Unique identifier for the selected node
+/// - `signature`: Sui signature for request authentication
+/// - `stack_small_id`: Identifier for the selected processing stack
+/// - `headers`: Sanitized headers for forwarding (auth headers removed)
+/// - `total_tokens`: Estimated total token usage
+/// - `tx_digest`: Optional transaction digest if a new stack was created
+///
+/// # Errors
+///
+/// Returns `StatusCode` error in the following cases:
+/// - `UNAUTHORIZED`: Invalid or missing authentication
+/// - `BAD_REQUEST`: Invalid payload format or unsupported model
+/// - `NOT_FOUND`: No available node address found
+/// - `INTERNAL_SERVER_ERROR`: Various internal processing failures
 #[instrument(level = "info", skip_all)]
 async fn authenticate_and_process(
     state: &ProxyState,
     headers: HeaderMap,
     payload: &Value,
-) -> Result<(String, i64, String, i64, HeaderMap, u64), StatusCode> {
+) -> Result<ProcessedRequest, StatusCode> {
     // Authentication and payload extraction
-    let (model, max_tokens, messages, tokenizer_index) =
-        authenticate_and_extract(state, &headers, payload).await?;
+    let AuthenticatedRequest {
+        model,
+        max_tokens,
+        messages,
+        tokenizer_index,
+    } = authenticate_and_extract(state, &headers, payload).await?;
 
     // Token estimation
     let total_tokens =
         get_token_estimate(&messages, max_tokens, &state.tokenizers[tokenizer_index]).await?;
 
     // Get node selection
-    let (selected_stack_small_id, selected_node_id) = get_selected_node(
+    let SelectedNodeMetadata {
+        stack_small_id: selected_stack_small_id,
+        selected_node_id,
+        tx_digest,
+    } = get_selected_node(
         &model,
         &state.state_manager_sender,
         &state.sui,
@@ -443,14 +506,28 @@ async fn authenticate_and_process(
     let mut headers = headers;
     headers.remove(AUTHORIZATION);
 
-    Ok((
+    Ok(ProcessedRequest {
         node_address,
-        selected_node_id,
+        node_id: selected_node_id,
         signature,
-        selected_stack_small_id,
+        stack_small_id: selected_stack_small_id,
         headers,
         total_tokens,
-    ))
+        tx_digest,
+    })
+}
+
+/// Represents the extracted and validated fields from a chat completion request
+#[derive(Debug)]
+pub struct AuthenticatedRequest {
+    /// The AI model to be used for completion
+    pub model: String,
+    /// Maximum number of tokens to generate in the response
+    pub max_tokens: u64,
+    /// The conversation messages for the completion
+    pub messages: Value,
+    /// Index of the tokenizer to use for this model
+    pub tokenizer_index: usize,
 }
 
 /// Authenticates the request and extracts required fields from the payload.
@@ -463,13 +540,19 @@ async fn authenticate_and_process(
 ///
 /// # Returns
 ///
-/// Returns a tuple of (model, max_tokens, messages, tokenizer_index) if successful
+/// Returns an `AuthenticatedRequest` containing all validated request parameters
+///
+/// # Errors
+///
+/// * `StatusCode::UNAUTHORIZED` - If authentication fails
+/// * `StatusCode::BAD_REQUEST` - If required fields are missing or invalid
+/// * `StatusCode::BAD_REQUEST` - If the requested model is not supported
 #[instrument(level = "info", skip_all)]
 async fn authenticate_and_extract(
     state: &ProxyState,
     headers: &HeaderMap,
     payload: &Value,
-) -> Result<(String, u64, Value, usize), StatusCode> {
+) -> Result<AuthenticatedRequest, StatusCode> {
     if !check_auth(&state.password, headers) {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -496,7 +579,12 @@ async fn authenticate_and_extract(
             StatusCode::BAD_REQUEST
         })?;
 
-    Ok((model, max_tokens, messages.clone(), tokenizer_index))
+    Ok(AuthenticatedRequest {
+        model,
+        max_tokens,
+        messages: messages.clone(),
+        tokenizer_index,
+    })
 }
 
 /// Checks the authentication of the request.
@@ -584,13 +672,24 @@ async fn get_token_estimate(
     Ok(total_num_tokens)
 }
 
+/// Metadata returned when selecting a node for processing a model request
+#[derive(Debug)]
+pub struct SelectedNodeMetadata {
+    /// The small ID of the stack
+    pub stack_small_id: i64,
+    /// The small ID of the selected node
+    pub selected_node_id: i64,
+    /// The transaction digest of the stack entry creation transaction
+    pub tx_digest: Option<TransactionDigest>,
+}
+
 /// Selects a node for processing a model request by either finding an existing stack or acquiring a new one.
 ///
 /// This function follows a two-step process:
 /// 1. First, it attempts to find existing stacks that can handle the requested model and compute units
 /// 2. If no suitable stacks exist, it acquires a new stack entry by:
-///    - Finding available tasks for the model
-///    - Creating a new stack entry with predefined compute units and price
+///    - Finding the cheapest available node for the model
+///    - Creating a new stack entry through the Sui blockchain
 ///    - Registering the new stack with the state manager
 ///
 /// # Arguments
@@ -602,26 +701,32 @@ async fn get_token_estimate(
 ///
 /// # Returns
 ///
-/// Returns a tuple of `(stack_small_id, selected_node_id)` where:
+/// Returns a `SelectedNodeMetadata` containing:
 /// * `stack_small_id` - The identifier for the selected/created stack
 /// * `selected_node_id` - The identifier for the node that will process the request
+/// * `tx_digest` - Optional transaction digest if a new stack was created
 ///
 /// # Errors
 ///
 /// Returns a `StatusCode` error in the following cases:
 /// * `INTERNAL_SERVER_ERROR` - Communication errors with state manager or Sui interface
-/// * `NOT_FOUND` - No tasks available for the requested model
-/// * `BAD_REQUEST` - Requested compute units exceed the maximum allowed limit
+/// * `NOT_FOUND` - No available nodes found for the requested model
+/// * `INTERNAL_SERVER_ERROR` - Failed to acquire new stack entry or update state manager
 ///
 /// # Example
 ///
-/// ```no_run
-/// let (stack_id, node_id) = get_selected_node(
+/// ```rust,ignore
+/// let metadata = get_selected_node(
 ///     "gpt-4",
 ///     &state_manager_sender,
 ///     &sui,
 ///     1000
 /// ).await?;
+/// println!("Selected stack ID: {}", metadata.stack_small_id);
+/// println!("Selected node ID: {}", metadata.selected_node_id);
+/// if let Some(digest) = metadata.tx_digest {
+///     println!("New stack created with tx: {}", digest);
+/// }
 /// ```
 #[instrument(level = "info", skip_all, fields(%model))]
 async fn get_selected_node(
@@ -629,7 +734,7 @@ async fn get_selected_node(
     state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
     sui: &Arc<RwLock<Sui>>,
     total_tokens: u64,
-) -> Result<(i64, i64), StatusCode> {
+) -> Result<SelectedNodeMetadata, StatusCode> {
     let (result_sender, result_receiver) = oneshot::channel();
 
     state_manager_sender
@@ -682,7 +787,10 @@ async fn get_selected_node(
                 return Err(StatusCode::NOT_FOUND);
             }
         };
-        let event = sui
+        let StackEntryResponse {
+            transaction_digest: tx_digest,
+            stack_created_event: event,
+        } = sui
             .write()
             .await
             .acquire_new_stack_entry(
@@ -710,9 +818,17 @@ async fn get_selected_node(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        Ok((stack_small_id, selected_node_id))
+        Ok(SelectedNodeMetadata {
+            stack_small_id,
+            selected_node_id,
+            tx_digest: Some(tx_digest),
+        })
     } else {
-        Ok((stacks[0].stack_small_id, stacks[0].selected_node_id))
+        Ok(SelectedNodeMetadata {
+            stack_small_id: stacks[0].stack_small_id,
+            selected_node_id: stacks[0].selected_node_id,
+            tx_digest: None,
+        })
     }
 }
 

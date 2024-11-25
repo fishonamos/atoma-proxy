@@ -11,12 +11,27 @@ use sui_keys::keystore::{AccountKeystore, Keystore};
 use sui_sdk::{
     json::SuiJsonValue,
     rpc_types::Page,
-    types::{base_types::ObjectID, crypto::EncodeDecodeBase64, SUI_RANDOMNESS_STATE_OBJECT_ID},
+    types::{
+        base_types::ObjectID, crypto::EncodeDecodeBase64, digests::TransactionDigest,
+        SUI_RANDOMNESS_STATE_OBJECT_ID,
+    },
     wallet_context::WalletContext,
 };
 use tracing::{error, info, instrument};
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
+
+/// Response returned when acquiring a new stack entry
+///
+/// This struct contains both the transaction digest of the stack entry creation
+/// and the event data generated when the stack was created.
+#[derive(Debug)]
+pub struct StackEntryResponse {
+    /// The transaction digest from the stack entry creation transaction
+    pub transaction_digest: TransactionDigest,
+    /// The event data emitted when the stack was created
+    pub stack_created_event: StackCreatedEvent,
+}
 
 /// The Sui client
 ///
@@ -75,7 +90,7 @@ impl Sui {
         task_small_id: u64,
         num_compute_units: u64,
         price: u64,
-    ) -> Result<StackCreatedEvent> {
+    ) -> Result<StackEntryResponse> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
         let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
@@ -115,7 +130,10 @@ impl Sui {
             .and_then(|event| event.data.first().cloned())
             .ok_or_else(|| anyhow::anyhow!("No stack created event"))?
             .parsed_json;
-        Ok(serde_json::from_value(stack_created_event.clone())?)
+        Ok(StackEntryResponse {
+            transaction_digest: response.digest,
+            stack_created_event: serde_json::from_value(stack_created_event.clone())?,
+        })
     }
 
     /// Get or load the TOMA wallet object ID
