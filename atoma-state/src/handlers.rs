@@ -1,8 +1,13 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
-    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
-    StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
-    StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, AtomaEvent, NewStackSettlementAttestationEvent, NewStackSettlementAttestationEvent,
+    NodePublicKeyCommittmentEvent, NodeRegisteredEvent, NodeSubscribedToTaskEvent,
+    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeSubscriptionUpdatedEvent,
+    NodeUnsubscribedFromTaskEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
+    StackAttestationDisputeEvent, StackCreatedEvent, StackCreatedEvent,
+    StackSettlementTicketClaimedEvent, StackSettlementTicketClaimedEvent,
+    StackSettlementTicketEvent, StackSettlementTicketEvent, StackTrySettleEvent,
+    StackTrySettleEvent, TaskDeprecationEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    TaskRegisteredEvent,
 };
 use tracing::{info, instrument, trace};
 
@@ -67,9 +72,8 @@ pub async fn handle_atoma_event(
             info!("Published event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::NodeRegisteredEvent(event) => {
-            info!("Node registered event: {:?}", event);
-            Ok(())
+        AtomaEvent::NodeRegisteredEvent((event, address)) => {
+            handle_node_registration_event(state_manager, event, address.to_string()).await
         }
         AtomaEvent::NodeSubscribedToModelEvent(event) => {
             info!("Node subscribed to model event: {:?}", event);
@@ -607,6 +611,18 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
     Ok(())
 }
 
+pub(crate) async fn handle_node_registration_event(
+    state_manager: &AtomaStateManager,
+    event: NodeRegisteredEvent,
+    address: String,
+) -> Result<()> {
+    state_manager
+        .state
+        .insert_new_node(event.node_small_id.inner as i64, address)
+        .await?;
+    Ok(())
+}
+
 /// Handles events related to the state manager.
 ///
 /// This function processes various events that are sent to the state manager,
@@ -780,6 +796,24 @@ pub(crate) async fn handle_state_manager_event(
                 .await;
             result_sender
                 .send(public_address)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
+        AtomaAtomaStateManagerEvent::GetNodeSuiAddress {
+            node_small_id,
+            result_sender,
+        } => {
+            trace!(
+                target = "atoma-state-handlers",
+                event = "handle-state-manager-event",
+                "Getting sui address for node with id: {}",
+                node_small_id
+            );
+            let sui_address = state_manager
+                .state
+                .get_node_sui_address(node_small_id)
+                .await;
+            result_sender
+                .send(sui_address)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::NewStackAcquired {
