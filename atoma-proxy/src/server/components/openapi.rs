@@ -2,7 +2,11 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::server::chat_completions::{ChatCompletionsOpenApi, CHAT_COMPLETIONS_PATH};
+use crate::server::handlers::{
+    chat_completions::ChatCompletionsOpenApi, chat_completions::CHAT_COMPLETIONS_PATH,
+    embeddings::EmbeddingsOpenApi, embeddings::EMBEDDINGS_PATH,
+    image_generations::ImageGenerationsOpenApi, image_generations::IMAGE_GENERATIONS_PATH,
+};
 use crate::server::http_server::{
     HealthOpenApi, ModelsOpenApi, NodePublicAddressRegistrationOpenApi, HEALTH_PATH, MODELS_PATH,
     NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
@@ -11,37 +15,28 @@ use crate::server::http_server::{
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
-        //modifiers(&SecurityAddon),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi),
             (path = MODELS_PATH, api = ModelsOpenApi),
             (path = NODE_PUBLIC_ADDRESS_REGISTRATION_PATH, api = NodePublicAddressRegistrationOpenApi),
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi),
+            (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi),
+            (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi),
         ),
         tags(
             (name = "health", description = "Health check"),
             (name = "chat", description = "Chat completions"),
             (name = "models", description = "Models"),
             (name = "node-public-address-registration", description = "Node public address registration"),
-            (name = "chat-completions", description = "OpenAI's API chat completions v1 endpoint")
+            (name = "chat-completions", description = "OpenAI's API chat completions v1 endpoint"),
+            (name = "embeddings", description = "OpenAI's API embeddings v1 endpoint"),
+            (name = "image-generations", description = "OpenAI's API image generations v1 endpoint"),
         ),
         servers(
             (url = "http://localhost:8080"),
         )
     )]
     struct ApiDoc;
-
-    // struct SecurityAddon;
-    // impl Modify for SecurityAddon {
-    //     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-    //         if let Some(components) = openapi.components.as_mut() {
-    //             components.add_security_scheme(
-    //                 "bearerAuth",
-    //                 SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
-    //             )
-    //         }
-    //     }
-    // }
 
     // Generate the OpenAPI spec and write it to a file
     #[cfg(debug_assertions)]
