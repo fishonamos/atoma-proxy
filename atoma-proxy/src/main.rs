@@ -119,9 +119,12 @@ async fn main() -> Result<()> {
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
 
+    let (_stack_retrieve_sender, stack_retrieve_receiver) = tokio::sync::mpsc::unbounded_channel();
+
     let sui_subscriber = atoma_sui::SuiEventSubscriber::new(
         config.sui.clone(),
         event_subscriber_sender,
+        stack_retrieve_receiver,
         shutdown_receiver.clone(),
     );
 
