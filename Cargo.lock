@@ -606,7 +606,7 @@ dependencies = [
 [[package]]
 name = "atoma-sui"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#c0ad6a7f7c9fc671df4d5095d1d24f8fe96e8a67"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#f25182c1be7ebe36618f2dea65a71b3986dc5408"
 dependencies = [
  "anyhow",
  "config",
@@ -625,7 +625,7 @@ dependencies = [
 [[package]]
 name = "atoma-utils"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#c0ad6a7f7c9fc671df4d5095d1d24f8fe96e8a67"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#f25182c1be7ebe36618f2dea65a71b3986dc5408"
 dependencies = [
  "anyhow",
  "axum",
