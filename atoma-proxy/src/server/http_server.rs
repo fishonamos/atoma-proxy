@@ -320,7 +320,7 @@ pub async fn health() -> Result<Json<Value>, StatusCode> {
 /// 2. Confidential routes for secure processing
 ///
 /// # Routes
-/// 
+///
 /// ## Standard Routes
 /// - POST `/v1/chat/completions` - Chat completion endpoint
 /// - POST `/v1/embeddings` - Text embedding generation
@@ -345,9 +345,15 @@ pub async fn health() -> Result<Json<Value>, StatusCode> {
 /// Returns an configured `Router` instance with all routes and middleware set up
 pub fn create_router(state: ProxyState) -> Router {
     let confidential_router = Router::new()
-        .route(CONFIDENTIAL_CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(
+            CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+            post(chat_completions_handler),
+        )
         .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
-        .route(CONFIDENTIAL_IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .route(
+            CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+            post(image_generations_handler),
+        )
         .with_state(state.clone());
 
     Router::new()
