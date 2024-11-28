@@ -27,6 +27,9 @@ use crate::server::handlers::{
 use crate::sui::Sui;
 
 use super::components;
+use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
+use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
+use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
 use super::AtomaServiceConfig;
 
 /// Path for health check endpoint.
@@ -310,6 +313,58 @@ pub async fn health() -> Result<Json<Value>, StatusCode> {
     Ok(Json(json!({ "status": "ok" })))
 }
 
+/// Creates a router with the appropriate routes and state for the atoma proxy service.
+///
+/// This function sets up two sets of routes:
+/// 1. Standard routes for public API endpoints
+/// 2. Confidential routes for secure processing
+///
+/// # Routes
+/// 
+/// ## Standard Routes
+/// - POST `/v1/chat/completions` - Chat completion endpoint
+/// - POST `/v1/embeddings` - Text embedding generation
+/// - POST `/v1/images/generations` - Image generation
+/// - GET `/v1/models` - List available AI models
+/// - POST `/node/registration` - Node public address registration
+/// - GET `/health` - Service health check
+/// - OpenAPI documentation routes
+///
+/// ## Confidential Routes
+/// Secure variants of the processing endpoints:
+/// - POST `/confidential/v1/chat/completions`
+/// - POST `/confidential/v1/embeddings`
+/// - POST `/confidential/v1/images/generations`
+///
+/// # Arguments
+///
+/// * `state` - Shared application state containing configuration and resources
+///
+/// # Returns
+///
+/// Returns an configured `Router` instance with all routes and middleware set up
+pub fn create_router(state: ProxyState) -> Router {
+    let confidential_router = Router::new()
+        .route(CONFIDENTIAL_CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(CONFIDENTIAL_IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .with_state(state.clone());
+
+    Router::new()
+        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .route(MODELS_PATH, get(models_handler))
+        .route(
+            NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
+            post(node_public_address_registration),
+        )
+        .with_state(state.clone())
+        .route(HEALTH_PATH, get(health))
+        .merge(openapi_routes())
+        .merge(confidential_router)
+}
+
 /// Starts the atoma proxy server.
 ///
 /// This function starts the atoma proxy server by binding to the specified address
@@ -341,18 +396,7 @@ pub async fn start_server(
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
     };
-    let router = Router::new()
-        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
-        .route(EMBEDDINGS_PATH, post(embeddings_handler))
-        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
-        .route(MODELS_PATH, get(models_handler))
-        .route(
-            NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
-            post(node_public_address_registration),
-        )
-        .with_state(proxy_state)
-        .route(HEALTH_PATH, get(health))
-        .merge(openapi_routes());
+    let router = create_router(proxy_state);
     let server =
         axum::serve(tcp_listener, router.into_make_service()).with_graceful_shutdown(async move {
             shutdown_receiver

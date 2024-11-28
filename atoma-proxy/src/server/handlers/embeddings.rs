@@ -17,6 +17,18 @@ use crate::server::http_server::ProxyState;
 
 use super::{authenticate_and_process, request_model::RequestModel, ProcessedRequest};
 
+/// Path for the confidential embeddings endpoint.
+///
+/// This endpoint follows the OpenAI API format for embeddings, with additional
+/// confidential processing (through AEAD encryption and TEE hardware).
+pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
+
+/// Path for the embeddings endpoint.
+///
+/// This endpoint follows the OpenAI API format for embeddings
+/// and is used to generate vector embeddings for input text.
+pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
+
 // A model representing an embeddings request payload.
 ///
 /// This struct encapsulates the necessary fields for processing an embeddings request
@@ -27,12 +39,6 @@ pub struct RequestModelEmbeddings {
     /// The input text to generate embeddings for
     input: String,
 }
-
-/// Path for the embeddings endpoint.
-///
-/// This endpoint follows the OpenAI API format for embeddings
-/// and is used to generate vector embeddings for input text.
-pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]

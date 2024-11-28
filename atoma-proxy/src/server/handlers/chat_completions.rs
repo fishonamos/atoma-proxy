@@ -13,11 +13,11 @@ use utoipa::OpenApi;
 
 use super::{authenticate_and_process, ProcessedRequest, RequestModel};
 
-pub struct RequestModelChatCompletions {
-    model: String,
-    messages: Vec<Value>,
-    max_tokens: u64,
-}
+/// Path for the confidential chat completions endpoint.
+///
+/// This endpoint follows the OpenAI API format for chat completions, with additional
+/// confidential processing (through AEAD encryption and TEE hardware).
+pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
 
 /// Path for the chat completions endpoint.
 ///
@@ -27,6 +27,21 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
 /// The interval for the keep-alive message in the SSE stream.
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
+
+/// Represents a chat completion request model following the OpenAI API format
+pub struct RequestModelChatCompletions {
+    /// The identifier of the model to use for the completion
+    /// (e.g., "gpt-3.5-turbo", "gpt-4", etc.)
+    model: String,
+
+    /// Array of message objects that represent the conversation history
+    /// Each message should contain a "role" (system/user/assistant) and "content"
+    messages: Vec<Value>,
+
+    /// The maximum number of tokens to generate in the completion
+    /// This limits the length of the model's response
+    max_tokens: u64,
+}
 
 /// OpenAPI documentation for the chat completions endpoint.
 ///

@@ -1,8 +1,5 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
-    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodeKeyRotationEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent
 };
 use tracing::{info, instrument, trace};
 
@@ -55,6 +52,13 @@ pub async fn handle_atoma_event(
         }
         AtomaEvent::NewStackSettlementAttestationEvent(event) => {
             handle_new_stack_settlement_attestation_event(state_manager, event).await
+        }
+        AtomaEvent::NewKeyRotationEvent(event) => {
+            info!("New key rotation event: {:?}", event);
+            Ok(())
+        }
+        AtomaEvent::NodeKeyRotationEvent(event) => {
+            handle_node_key_rotation_event(state_manager, event).await
         }
         AtomaEvent::PublishedEvent(event) => {
             info!("Published event: {:?}", event);
@@ -827,5 +831,31 @@ pub(crate) async fn handle_state_manager_event(
                 .await?;
         }
     }
+    Ok(())
+}
+
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_node_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NodeKeyRotationEvent,
+) -> Result<()> {
+    info!("Node key rotation event: {:?}", event);
+    let NodeKeyRotationEvent {
+        epoch,
+        node_id,
+        node_badge_id,
+        new_public_key,
+        tee_remote_attestation_bytes,
+    } = event;
+    state_manager
+        .state
+        .update_node_public_key(
+            node_id.inner as i64,
+            epoch as i64,
+            node_badge_id,
+            new_public_key,
+            tee_remote_attestation_bytes,
+        )
+        .await?;
     Ok(())
 }

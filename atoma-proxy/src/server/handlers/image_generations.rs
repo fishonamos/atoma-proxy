@@ -15,6 +15,17 @@ use crate::server::http_server::ProxyState;
 use super::request_model::RequestModel;
 use super::{authenticate_and_process, ProcessedRequest};
 
+/// Path for the confidential image generations endpoint.
+///
+/// This endpoint follows the OpenAI API format for image generations, with additional
+/// confidential processing (through AEAD encryption and TEE hardware).
+pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
+
+/// Path for the image generations endpoint.
+///
+/// This endpoint follows the OpenAI API format for image generations
+pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
+
 /// A model representing the parameters for an image generation request.
 ///
 /// This struct encapsulates the required parameters for generating images through
@@ -28,9 +39,6 @@ pub struct RequestModelImageGenerations {
     /// (e.g., "1024x1024")
     size: String,
 }
-
-/// Path for the image generations endpoint.
-pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
