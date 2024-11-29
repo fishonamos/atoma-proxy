@@ -117,29 +117,29 @@ impl RequestModel for RequestModelChatCompletions {
 
 /// Handles the chat completions request.
 ///
-/// This function handles the chat completions request by processing the payload
-/// and sending the request to the appropriate node for processing.
-/// 1) Check the authentication of the request.
-/// 2) Get the model from the payload.
-/// 3) Get the stacks for the model.
-/// 4) In case no stacks are found, get the tasks for the model and acquire a new stack entry.
-/// 5) Get the public address of the selected node.
-/// 6) Send the OpenAI API request to the selected node.
-/// 7) Return the response from the OpenAI API.
+/// This function processes chat completion requests by determining whether to use streaming
+/// or non-streaming response handling based on the request payload. For streaming requests,
+/// it configures additional options to track token usage.
 ///
 /// # Arguments
 ///
-/// * `state`: The shared state of the application.
-/// * `headers`: The headers of the request.
-/// * `payload`: The payload of the request.
+/// * `metadata`: Extension containing request metadata (node address, ID, compute units, etc.)
+/// * `state`: The shared state of the application
+/// * `headers`: The headers of the request
+/// * `payload`: The JSON payload containing the chat completion request
 ///
 /// # Returns
 ///
-/// Returns the response from the OpenAI API or an error status code.
+/// Returns a Response containing either:
+/// - A streaming SSE connection for real-time completions
+/// - A single JSON response for non-streaming completions
 ///
 /// # Errors
 ///
-/// Returns an error status code if the authentication fails, the model is not found, no tasks are found for the model, no node address is found, or an internal server error occurs.
+/// Returns an error status code if:
+/// - The request processing fails
+/// - The streaming/non-streaming handlers encounter errors
+/// - The underlying inference service returns an error
 #[utoipa::path(
     post,
     path = CHAT_COMPLETIONS_PATH,
@@ -156,10 +156,10 @@ impl RequestModel for RequestModelChatCompletions {
     fields(endpoint = CHAT_COMPLETIONS_PATH, payload = ?payload)
 )]
 pub async fn chat_completions_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
-    Extension(metadata): Extension<RequestMetadataExtension>,
 ) -> Result<Response<Body>, StatusCode> {
     let is_streaming = payload
         .get("stream")

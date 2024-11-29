@@ -89,28 +89,19 @@ impl RequestModel for RequestModelEmbeddings {
     }
 }
 
-/// Handles incoming embeddings requests by authenticating, processing, and forwarding them to the appropriate node.
+/// Handles incoming embeddings requests by forwarding them to the appropriate AI node.
 ///
 /// This endpoint follows the OpenAI API format for generating vector embeddings from input text.
-/// The handler performs several key operations:
+/// The handler receives pre-processed metadata from middleware and forwards the request to
+/// the selected node.
 ///
-/// 1. Authentication and validation:
-///    - Validates the API key and permissions
-///    - Ensures the request payload is properly formatted
-///
-/// 2. Request processing:
-///    - Extracts and validates the model name
-///    - Parses the input text for embedding generation
-///    - Estimates token usage for billing purposes
-///
-/// 3. Node selection and routing:
-///    - Selects an appropriate processing node based on load and availability
-///    - Forwards the request to the chosen node
-///    - Handles node communication and response processing
+/// Note: Authentication, node selection, and initial request validation are handled by middleware
+/// before this handler is called.
 ///
 /// # Arguments
+/// * `metadata` - Pre-processed request metadata containing node information and compute units
 /// * `state` - The shared proxy state containing configuration and runtime information
-/// * `headers` - HTTP headers from the incoming request, including authentication
+/// * `headers` - HTTP headers from the incoming request
 /// * `payload` - The JSON request body containing the model and input text
 ///
 /// # Returns
@@ -118,8 +109,6 @@ impl RequestModel for RequestModelEmbeddings {
 /// * `Err(StatusCode)` - An error status code if any step fails
 ///
 /// # Errors
-/// * `BAD_REQUEST` - Invalid payload format or unsupported model
-/// * `UNAUTHORIZED` - Invalid or missing authentication
 /// * `INTERNAL_SERVER_ERROR` - Processing or node communication failures
 #[utoipa::path(
     post,
@@ -137,10 +126,10 @@ impl RequestModel for RequestModelEmbeddings {
     fields(endpoint = EMBEDDINGS_PATH, payload = ?payload)
 )]
 pub async fn embeddings_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
-    Extension(metadata): Extension<RequestMetadataExtension>,
 ) -> Result<Response<Body>, StatusCode> {
     let RequestMetadataExtension {
         node_address,

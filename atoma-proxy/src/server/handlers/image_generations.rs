@@ -94,24 +94,22 @@ impl RequestModel for RequestModelImageGenerations {
 
 /// Handles incoming requests for AI image generation.
 ///
-/// This endpoint processes requests to generate images using AI models. It performs the following steps:
-/// 1. Validates and parses the incoming request payload
-/// 2. Authenticates the request and processes billing/compute units
-/// 3. Forwards the request to the appropriate AI node for image generation
+/// This endpoint processes requests to generate images using AI models by forwarding them
+/// to the appropriate AI node. The request metadata and compute units have already been
+/// validated by middleware before reaching this handler.
 ///
 /// # Arguments
+/// * `metadata` - Extension containing pre-processed request metadata (node address, compute units, etc.)
 /// * `state` - Application state containing configuration and shared resources
 /// * `headers` - HTTP headers from the incoming request
-/// * `payload` - JSON payload containing image generation parameters (model, size, number of images)
+/// * `payload` - JSON payload containing image generation parameters
 ///
 /// # Returns
-/// * `Result<Response<Body>, StatusCode>` - Either a successful response containing the generated
-///   images or an error status code
+/// * `Result<Response<Body>, StatusCode>` - The processed response from the AI node or an error status
 ///
 /// # Errors
-/// * `BAD_REQUEST` - If the request payload is invalid or missing required fields
-/// * `UNAUTHORIZED` - If authentication fails
-/// * `INTERNAL_SERVER_ERROR` - If there's an error processing the request or communicating with the AI node
+/// * Returns various status codes based on the underlying `handle_image_generation_response`:
+///   - `INTERNAL_SERVER_ERROR` - If there's an error communicating with the AI node
 ///
 /// # Example Payload
 /// ```json
@@ -137,10 +135,10 @@ impl RequestModel for RequestModelImageGenerations {
     fields(endpoint = IMAGE_GENERATIONS_PATH, payload = ?payload)
 )]
 pub async fn image_generations_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
-    Extension(metadata): Extension<RequestMetadataExtension>,
 ) -> Result<Response<Body>, StatusCode> {
     handle_image_generation_response(
         state,
