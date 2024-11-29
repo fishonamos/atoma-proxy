@@ -2512,12 +2512,11 @@ impl AtomaState {
         &self,
         selected_node_id: i64,
     ) -> Result<Option<Vec<u8>>> {
-        let public_key = sqlx::query(
-            "SELECT public_key FROM node_public_keys WHERE node_small_id = $1",
-        )
-        .bind(selected_node_id)
-        .fetch_optional(&self.db)
-        .await?;
+        let public_key =
+            sqlx::query("SELECT public_key FROM node_public_keys WHERE node_small_id = $1")
+                .bind(selected_node_id)
+                .fetch_optional(&self.db)
+                .await?;
         Ok(public_key.map(|row| row.get::<Vec<u8>, _>("public_key")))
     }
 }
