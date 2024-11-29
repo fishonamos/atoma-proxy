@@ -833,10 +833,59 @@ pub(crate) async fn handle_state_manager_event(
                 .update_node_latency_performance(node_small_id, latency)
                 .await?;
         }
+        AtomaAtomaStateManagerEvent::GetSelectedNodeX25519PublicKey {
+            selected_node_id,
+            result_sender,
+        } => {
+            let public_key = state_manager
+                .state
+                .get_selected_node_x25519_public_key(selected_node_id)
+                .await;
+            result_sender
+                .send(public_key)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
     }
     Ok(())
 }
 
+/// Handles a node key rotation event by updating the node's public key in the database.
+///
+/// This function processes a node key rotation event, which occurs when a node updates its
+/// cryptographic keys. It extracts the relevant information from the event and updates
+/// the node's public key and associated data in the state database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations
+/// * `event` - A `NodeKeyRotationEvent` containing the details of the key rotation:
+///   * `epoch` - The epoch number when the key rotation occurred
+///   * `node_id` - The identifier of the node performing the key rotation
+///   * `node_badge_id` - The badge identifier associated with the node
+///   * `new_public_key` - The new public key for the node
+///   * `tee_remote_attestation_bytes` - Remote attestation data for trusted execution environment
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the key rotation was processed successfully, or an error if something went wrong
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to update the node's public key fails
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use atoma_state::AtomaStateManager;
+/// use atoma_sui::events::NodeKeyRotationEvent;
+///
+/// async fn rotate_key(state_manager: &AtomaStateManager, event: NodeKeyRotationEvent) {
+///     if let Err(e) = handle_node_key_rotation_event(state_manager, event).await {
+///         eprintln!("Failed to handle key rotation: {}", e);
+///     }
+/// }
+/// ```
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_node_key_rotation_event(
     state_manager: &AtomaStateManager,

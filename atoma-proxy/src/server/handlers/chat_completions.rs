@@ -1,17 +1,18 @@
 use std::time::{Duration, Instant};
 
+use crate::server::middleware::RequestMetadataExtension;
 use crate::server::{http_server::ProxyState, streamer::Streamer};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response, Sse};
+use axum::Extension;
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
-use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
-use super::{authenticate_and_process, ProcessedRequest, RequestModel};
+use super::request_model::RequestModel;
 
 /// Path for the confidential chat completions endpoint.
 ///
@@ -158,9 +159,8 @@ pub async fn chat_completions_handler(
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
+    Extension(metadata): Extension<RequestMetadataExtension>,
 ) -> Result<Response<Body>, StatusCode> {
-    let request_model = RequestModelChatCompletions::new(&payload)?;
-
     let is_streaming = payload
         .get("stream")
         .and_then(|v| v.as_bool())
@@ -171,39 +171,26 @@ pub async fn chat_completions_handler(
             "include_usage": true
         });
     }
-    let ProcessedRequest {
-        node_address,
-        node_id: selected_node_id,
-        signature,
-        stack_small_id: selected_stack_small_id,
-        headers,
-        num_compute_units: estimated_total_tokens,
-        tx_digest,
-    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
     if is_streaming {
         handle_streaming_response(
             state,
-            node_address,
-            selected_node_id,
-            signature,
-            selected_stack_small_id,
+            metadata.node_address,
+            metadata.node_id,
             headers,
             payload,
-            estimated_total_tokens as i64,
-            tx_digest,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
         )
         .await
     } else {
         handle_non_streaming_response(
             state,
-            node_address,
-            selected_node_id,
-            signature,
-            selected_stack_small_id,
+            metadata.node_address,
+            metadata.node_id,
             headers,
             payload,
-            estimated_total_tokens as i64,
-            tx_digest,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
         )
         .await
     }
@@ -265,27 +252,16 @@ async fn handle_non_streaming_response(
     state: ProxyState,
     node_address: String,
     selected_node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
-    tx_digest: Option<TransactionDigest>,
+    selected_stack_small_id: i64,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
-        .header("Content-Length", payload.to_string().len()); // Set the real length of the payload
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
         .json(&payload)
         .send()
         .await
@@ -405,12 +381,10 @@ async fn handle_streaming_response(
     state: ProxyState,
     node_address: String,
     node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
-    tx_digest: Option<TransactionDigest>,
+    selected_stack_small_id: i64,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -418,18 +392,9 @@ async fn handle_streaming_response(
 
     let client = reqwest::Client::new();
     let start = Instant::now();
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id);
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
-        .header("Content-Length", payload.to_string().len()) // Set the real length of the payload
         .json(&payload)
         .send()
         .await

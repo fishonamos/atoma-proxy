@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::http::StatusCode;
+use axum::middleware::from_fn_with_state;
 use axum::{
     extract::State,
     routing::{get, post},
@@ -15,6 +16,8 @@ use tokenizers::Tokenizer;
 use tokio::sync::watch;
 use tokio::{net::TcpListener, sync::RwLock};
 use tracing::{error, instrument};
+use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
+use zeroize::Zeroizing;
 
 pub use components::openapi::openapi_routes;
 use utoipa::{OpenApi, ToSchema};
@@ -30,6 +33,7 @@ use super::components;
 use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
 use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
 use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
+use super::middleware::confidential_compute_middleware;
 use super::AtomaServiceConfig;
 
 /// Path for health check endpoint.
@@ -89,6 +93,30 @@ pub struct ProxyState {
     /// application to dynamically select and switch between different
     /// models as needed.
     pub models: Arc<Vec<String>>,
+
+    /// Secret key for X25519 key exchange.
+    ///
+    /// This key is used to compute shared secrets with nodes' public keys.
+    /// The key is wrapped in both Arc (for shared ownership) and Zeroizing
+    /// (to ensure the key material is securely erased from memory when dropped).
+    secret_key: Arc<Zeroizing<StaticSecret>>,
+}
+
+impl ProxyState {
+    /// Returns the public key for the X25519 key exchange.
+    ///
+    /// This key is used to compute shared secrets with nodes' public keys.
+    pub fn public_key(&self) -> PublicKey {
+        PublicKey::from(&**self.secret_key)
+    }
+
+    /// Computes the shared secret for the X25519 key exchange.
+    ///
+    /// This function computes the shared secret between the proxy's secret key
+    /// and a given node's public key.
+    pub fn compute_shared_secret(&self, public_key: &PublicKey) -> SharedSecret {
+        self.secret_key.diffie_hellman(public_key)
+    }
 }
 
 /// OpenAPI documentation for the models listing endpoint.
@@ -354,6 +382,10 @@ pub fn create_router(state: ProxyState) -> Router {
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
             post(image_generations_handler),
         )
+        .layer(from_fn_with_state(
+            state.clone(),
+            confidential_compute_middleware,
+        ))
         .with_state(state.clone());
 
     Router::new()
@@ -395,12 +427,14 @@ pub async fn start_server(
 ) -> Result<()> {
     let tcp_listener = TcpListener::bind(config.service_bind_address).await?;
 
+    let secret_key = StaticSecret::random_from_rng(rand::thread_rng());
     let proxy_state = ProxyState {
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
         password: config.password,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
+        secret_key: Arc::new(Zeroizing::new(secret_key)),
     };
     let router = create_router(proxy_state);
     let server =

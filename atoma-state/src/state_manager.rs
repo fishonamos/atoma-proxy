@@ -2495,6 +2495,31 @@ impl AtomaState {
         .await?;
         Ok(())
     }
+
+    /// Retrieves the X25519 public key for a selected node.
+    ///
+    /// This method retrieves the X25519 public key for a specific node from the `node_public_keys` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `selected_node_id` - The unique small identifier of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<String>>`: A result containing the X25519 public key if found, or None if not found.
+    #[instrument(level = "trace", skip_all, fields(%selected_node_id))]
+    pub async fn get_selected_node_x25519_public_key(
+        &self,
+        selected_node_id: i64,
+    ) -> Result<Option<Vec<u8>>> {
+        let public_key = sqlx::query(
+            "SELECT public_key FROM node_public_keys WHERE node_small_id = $1",
+        )
+        .bind(selected_node_id)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(public_key.map(|row| row.get::<Vec<u8>, _>("public_key")))
+    }
 }
 
 #[derive(Error, Debug)]

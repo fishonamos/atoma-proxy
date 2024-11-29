@@ -6,16 +6,15 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    Json,
+    Extension, Json,
 };
 use serde_json::Value;
-use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
-use crate::server::http_server::ProxyState;
+use crate::server::{http_server::ProxyState, middleware::RequestMetadataExtension};
 
-use super::{authenticate_and_process, request_model::RequestModel, ProcessedRequest};
+use super::request_model::RequestModel;
 
 /// Path for the confidential embeddings endpoint.
 ///
@@ -141,29 +140,21 @@ pub async fn embeddings_handler(
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
+    Extension(metadata): Extension<RequestMetadataExtension>,
 ) -> Result<Response<Body>, StatusCode> {
-    let request_model = RequestModelEmbeddings::new(&payload)?;
-
-    let ProcessedRequest {
+    let RequestMetadataExtension {
         node_address,
         node_id,
-        signature,
-        stack_small_id: selected_stack_small_id,
-        headers,
         num_compute_units: num_input_compute_units,
-        tx_digest,
-    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
-
+        ..
+    } = metadata;
     handle_embeddings_response(
         state,
         node_address,
         node_id,
-        signature,
-        selected_stack_small_id,
         headers,
         payload,
         num_input_compute_units as i64,
-        tx_digest,
     )
     .await
 }
@@ -208,28 +199,16 @@ async fn handle_embeddings_response(
     state: ProxyState,
     node_address: String,
     selected_node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     num_input_compute_units: i64,
-    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, EMBEDDINGS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id);
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
-        .header("Content-Length", payload.to_string().len())
         .json(&payload)
         .send()
         .await
