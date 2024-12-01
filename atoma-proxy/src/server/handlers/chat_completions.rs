@@ -142,7 +142,7 @@ impl RequestModel for RequestModelChatCompletions {
 /// - The underlying inference service returns an error
 #[utoipa::path(
     post,
-    path = CHAT_COMPLETIONS_PATH,
+    path = "",
     responses(
         (status = OK, description = "Chat completions", body = Value),
         (status = BAD_REQUEST, description = "Bad request"),
