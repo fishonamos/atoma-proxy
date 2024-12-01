@@ -4,7 +4,7 @@ use auth::{authenticate_and_process, ProcessedRequest};
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::HeaderValue,
+    http::{request::Parts, HeaderMap, HeaderValue},
     middleware::Next,
     response::Response,
 };
@@ -136,7 +136,7 @@ pub async fn authenticate_middleware(
         error!("Failed to parse body as JSON");
         StatusCode::BAD_REQUEST
     })?;
-    let endpoint = req_parts.uri.path();
+    let endpoint = req_parts.uri.path().to_string();
     let ProcessedRequest {
         node_address,
         node_id,
@@ -145,48 +145,7 @@ pub async fn authenticate_middleware(
         mut headers,
         num_compute_units,
         tx_digest,
-    } = match endpoint {
-        CHAT_COMPLETIONS_PATH | CONFIDENTIAL_CHAT_COMPLETIONS_PATH => {
-            let request_model = RequestModelChatCompletions::new(&body_json).map_err(|_| {
-                error!("Failed to parse body as chat completions request model");
-                StatusCode::BAD_REQUEST
-            })?;
-            authenticate_and_process(
-                request_model,
-                &state.0,
-                req_parts.headers.clone(),
-                &body_json,
-            )
-            .await?
-        }
-        EMBEDDINGS_PATH | CONFIDENTIAL_EMBEDDINGS_PATH => {
-            let request_model = RequestModelEmbeddings::new(&body_json).map_err(|_| {
-                error!("Failed to parse body as embeddings request model");
-                StatusCode::BAD_REQUEST
-            })?;
-            authenticate_and_process(
-                request_model,
-                &state.0,
-                req_parts.headers.clone(),
-                &body_json,
-            )
-            .await?
-        }
-        IMAGE_GENERATIONS_PATH | CONFIDENTIAL_IMAGE_GENERATIONS_PATH => {
-            let request_model = RequestModelImageGenerations::new(&body_json).map_err(|_| {
-                error!("Failed to parse body as image generations request model");
-                StatusCode::BAD_REQUEST
-            })?;
-            authenticate_and_process(
-                request_model,
-                &state.0,
-                req_parts.headers.clone(),
-                &body_json,
-            )
-            .await?
-        }
-        _ => return Err(StatusCode::NOT_FOUND),
-    };
+    } = utils::process_request(&state, &endpoint, &body_json, &mut req_parts).await?;
     let stack_small_id_header =
         HeaderValue::from_str(&stack_small_id.to_string()).map_err(|e| {
             error!("Failed to convert stack small id to header value: {}", e);
@@ -217,49 +176,7 @@ pub async fn authenticate_middleware(
         num_compute_units,
         selected_stack_small_id: stack_small_id,
     });
-    if [
-        CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
-        CONFIDENTIAL_EMBEDDINGS_PATH,
-        CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
-    ]
-    .contains(&endpoint)
-    {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        state
-            .state_manager_sender
-            .send(
-                AtomaAtomaStateManagerEvent::GetSelectedNodeX25519PublicKey {
-                    selected_node_id: node_id,
-                    result_sender: sender,
-                },
-            )
-            .map_err(|err| {
-                error!("Failed to get server x25519 public key: {}", err);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-        let x25519_dalek_public_key = receiver
-            .await
-            .map_err(|err| {
-                error!("Failed to receive server x25519 public key: {}", err);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .map_err(|err| {
-                error!("Failed to get server x25519 public key: {}", err);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-            .ok_or_else(|| {
-                error!("No x25519 public key found for node {}", node_id);
-                StatusCode::NOT_FOUND
-            })?;
-        let x25519_dalek_public_key_str = STANDARD.encode(x25519_dalek_public_key);
-        headers.insert(
-            "X-Node-X25519-PublicKey",
-            HeaderValue::from_str(&x25519_dalek_public_key_str).map_err(|e| {
-                error!("Failed to convert x25519 public key to header value: {}", e);
-                StatusCode::BAD_REQUEST
-            })?,
-        );
-    }
+    utils::handle_confidential_compute_content(state, &mut headers, &endpoint, node_id).await?;
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
 }
@@ -706,5 +623,204 @@ pub(crate) mod auth {
                 tx_digest: None,
             })
         }
+    }
+}
+
+pub(crate) mod utils {
+    use super::*;
+
+    /// Processes an incoming API request by validating the request model and performing authentication.
+    ///
+    /// This function handles three types of requests:
+    /// - Chat completions (both standard and confidential)
+    /// - Embeddings (both standard and confidential)
+    /// - Image generations (both standard and confidential)
+    ///
+    /// For each request type, it:
+    /// 1. Parses and validates the request body into the appropriate model type
+    /// 2. Authenticates the request and performs initial processing
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Server state containing shared resources and configuration
+    /// * `endpoint` - The API endpoint path being accessed
+    /// * `body_json` - The parsed JSON body of the request
+    /// * `req_parts` - Mutable reference to the request parts containing headers and other metadata
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing:
+    /// - `Ok(ProcessedRequest)`: Successfully processed request with node selection and authentication details
+    /// - `Err(StatusCode)`: Appropriate HTTP error status if processing fails
+    ///
+    /// # Errors
+    ///
+    /// Returns various status codes for different failure scenarios:
+    /// * `BAD_REQUEST` (400):
+    ///   - Invalid request model format
+    ///   - Failed to parse request body
+    /// * `UNAUTHORIZED` (401):
+    ///   - Authentication failure
+    /// * `NOT_FOUND` (404):
+    ///   - Invalid or unsupported endpoint
+    /// * `INTERNAL_SERVER_ERROR` (500):
+    ///   - State manager communication failures
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let processed = process_request(
+    ///     state,
+    ///     CHAT_COMPLETIONS_PATH,
+    ///     body_json,
+    ///     &mut req_parts
+    /// ).await?;
+    /// ```
+    pub(crate) async fn process_request(
+        state: &State<ProxyState>,
+        endpoint: &str,
+        body_json: &Value,
+        req_parts: &mut Parts,
+    ) -> Result<ProcessedRequest, StatusCode> {
+        match endpoint {
+            CHAT_COMPLETIONS_PATH | CONFIDENTIAL_CHAT_COMPLETIONS_PATH => {
+                let request_model = RequestModelChatCompletions::new(&body_json).map_err(|_| {
+                    error!("Failed to parse body as chat completions request model");
+                    StatusCode::BAD_REQUEST
+                })?;
+                authenticate_and_process(
+                    request_model,
+                    &state.0,
+                    req_parts.headers.clone(),
+                    &body_json,
+                )
+                .await
+            }
+            EMBEDDINGS_PATH | CONFIDENTIAL_EMBEDDINGS_PATH => {
+                let request_model = RequestModelEmbeddings::new(&body_json).map_err(|_| {
+                    error!("Failed to parse body as embeddings request model");
+                    StatusCode::BAD_REQUEST
+                })?;
+                authenticate_and_process(
+                    request_model,
+                    &state.0,
+                    req_parts.headers.clone(),
+                    &body_json,
+                )
+                .await
+            }
+            IMAGE_GENERATIONS_PATH | CONFIDENTIAL_IMAGE_GENERATIONS_PATH => {
+                let request_model =
+                    RequestModelImageGenerations::new(&body_json).map_err(|_| {
+                        error!("Failed to parse body as image generations request model");
+                        StatusCode::BAD_REQUEST
+                    })?;
+                authenticate_and_process(
+                    request_model,
+                    &state.0,
+                    req_parts.headers.clone(),
+                    &body_json,
+                )
+                .await
+            }
+            _ => return Err(StatusCode::NOT_FOUND),
+        }
+    }
+
+    /// Handles the setup of confidential computing headers for secure endpoints.
+    ///
+    /// This function checks if the request is targeting a confidential endpoint and, if so,
+    /// retrieves and adds the node's X25519 public key to the request headers. This key
+    /// is used for establishing secure end-to-end encrypted communication.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Server state containing access to the state manager
+    /// * `headers` - Mutable reference to request headers where the public key will be added
+    /// * `endpoint` - The API endpoint path being accessed
+    /// * `node_id` - The ID of the selected inference node
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the headers were successfully processed, or an appropriate
+    /// `StatusCode` error if any step fails.
+    ///
+    /// # Headers Added
+    ///
+    /// For confidential endpoints, adds:
+    /// * `X-Node-X25519-PublicKey`: Base64-encoded X25519 public key of the node
+    ///
+    /// # Errors
+    ///
+    /// Returns various status codes for different failure scenarios:
+    /// * `INTERNAL_SERVER_ERROR` (500):
+    ///   - Failed to communicate with state manager
+    ///   - Failed to receive public key response
+    /// * `NOT_FOUND` (404):
+    ///   - No X25519 public key found for the specified node
+    /// * `BAD_REQUEST` (400):
+    ///   - Failed to convert public key to header value
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut headers = HeaderMap::new();
+    /// handle_confidential_compute_content(
+    ///     state,
+    ///     &mut headers,
+    ///     CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+    ///     node_id
+    /// ).await?;
+    /// ```
+    pub(crate) async fn handle_confidential_compute_content(
+        state: State<ProxyState>,
+        headers: &mut HeaderMap,
+        endpoint: &str,
+        node_id: i64,
+    ) -> Result<(), StatusCode> {
+        if [
+            CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+            CONFIDENTIAL_EMBEDDINGS_PATH,
+            CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+        ]
+        .contains(&endpoint)
+        {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            state
+                .state_manager_sender
+                .send(
+                    AtomaAtomaStateManagerEvent::GetSelectedNodeX25519PublicKey {
+                        selected_node_id: node_id,
+                        result_sender: sender,
+                    },
+                )
+                .map_err(|err| {
+                    error!("Failed to get server x25519 public key: {}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            let x25519_dalek_public_key = receiver
+                .await
+                .map_err(|err| {
+                    error!("Failed to receive server x25519 public key: {}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .map_err(|err| {
+                    error!("Failed to get server x25519 public key: {}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or_else(|| {
+                    error!("No x25519 public key found for node {}", node_id);
+                    StatusCode::NOT_FOUND
+                })?;
+            let x25519_dalek_public_key_str = STANDARD.encode(x25519_dalek_public_key);
+            headers.insert(
+                "X-Node-X25519-PublicKey",
+                HeaderValue::from_str(&x25519_dalek_public_key_str).map_err(|e| {
+                    error!("Failed to convert x25519 public key to header value: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?,
+            );
+        }
+        Ok(())
     }
 }
