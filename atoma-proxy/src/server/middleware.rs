@@ -1,5 +1,5 @@
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::encryption::{decrypt_cyphertext, encrypt_plaintext};
+use atoma_utils::encryption::encrypt_plaintext;
 use auth::{authenticate_and_process, ProcessedRequest};
 use axum::{
     body::Body,
@@ -37,12 +37,6 @@ const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
 /// A 16-byte (128-bit) salt provides sufficient randomness
 /// for cryptographic operations.
 const SALT_SIZE: usize = 16;
-
-/// Size of the nonce in bytes used for encryption.
-/// A 12-byte (96-bit) nonce is the recommended size for
-/// AES-GCM encryption to provide a good balance between
-/// security and performance.
-const NONCE_SIZE: usize = 12;
 
 /// Size of the x25519 public key in bytes.
 const X25519_PUBLIC_KEY_SIZE: usize = 32;
@@ -313,7 +307,7 @@ pub async fn confidential_compute_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let (req_parts, body) = req.into_parts();
+    let (mut req_parts, body) = req.into_parts();
     let x25519_public_key_header = req_parts
         .headers
         .get("X-Node-X25519-PublicKey")
@@ -338,7 +332,6 @@ pub async fn confidential_compute_middleware(
         })?;
     let x25519_public_key = PublicKey::from(x25519_public_key_bytes);
     let salt = rand::random::<[u8; SALT_SIZE]>();
-    let nonce = rand::random::<[u8; NONCE_SIZE]>();
     let shared_secret = state.compute_shared_secret(&x25519_public_key);
     let plaintext = axum::body::to_bytes(body, MAX_BODY_SIZE)
         .await
@@ -346,7 +339,11 @@ pub async fn confidential_compute_middleware(
             error!("Request body is too large");
             StatusCode::BAD_REQUEST
         })?;
-    let (encrypted_plaintext, nonce) = encrypt_plaintext(plaintext, shared_secret, &salt);
+    let (encrypted_plaintext, nonce) = encrypt_plaintext(&plaintext, shared_secret, &salt)
+        .map_err(|_| {
+            error!("Failed to encrypt plaintext");
+            StatusCode::BAD_REQUEST
+        })?;
     let nonce_str = STANDARD.encode(nonce);
     let salt_str = STANDARD.encode(salt);
     let x25519_public_key_str = STANDARD.encode(x25519_public_key_bytes);
@@ -367,7 +364,7 @@ pub async fn confidential_compute_middleware(
     req_parts
         .headers
         .insert("X-Diffie-Hellman-Public-Key", x25519_public_key_header);
-    let req = Request::from_parts(req_parts, Body::new(encrypted_plaintext));
+    let req = Request::from_parts(req_parts, Body::from(encrypted_plaintext));
     Ok(next.run(req).await)
 }
 
