@@ -2469,26 +2469,23 @@ impl AtomaState {
     ///     ).await
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all, fields(%node_id, %epoch, %node_badge_id))]
+    #[instrument(level = "trace", skip_all, fields(%node_id, %epoch))]
     pub async fn update_node_public_key(
         &self,
         node_id: i64,
         epoch: i64,
-        node_badge_id: String,
         new_public_key: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_keys (node_small_id, epoch, node_badge_id, public_key, tee_remote_attestation_bytes) VALUES ($1, $2, $3, $4, $5)
+            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes) VALUES ($1, $2, $3, $4)
                 ON CONFLICT (node_small_id)
                 DO UPDATE SET epoch = $2, 
-                              node_badge_id = $3, 
-                              public_key = $4, 
-                              tee_remote_attestation_bytes = $5",
+                              public_key = $3, 
+                              tee_remote_attestation_bytes = $4",
         )
         .bind(node_id)
         .bind(epoch)
-        .bind(node_badge_id)
         .bind(new_public_key)
         .bind(tee_remote_attestation_bytes)
         .execute(&self.db)
@@ -2942,7 +2939,6 @@ pub(crate) mod queries {
             "CREATE TABLE IF NOT EXISTS node_public_keys (
                 node_small_id BIGINT PRIMARY KEY,
                 epoch BIGINT NOT NULL,
-                node_badge_id TEXT NOT NULL,
                 public_key BYTEA NOT NULL,
                 tee_remote_attestation_bytes BYTEA NOT NULL
             )",

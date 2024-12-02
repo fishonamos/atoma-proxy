@@ -611,7 +611,7 @@ dependencies = [
 [[package]]
 name = "atoma-sui"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#79dc5fbd5bc5f47286655802d58594e126c570ec"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#ee50d5c652134aa50532b272c199b68f001941cc"
 dependencies = [
  "anyhow",
  "config",
@@ -630,7 +630,7 @@ dependencies = [
 [[package]]
 name = "atoma-utils"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#79dc5fbd5bc5f47286655802d58594e126c570ec"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#ee50d5c652134aa50532b272c199b68f001941cc"
 dependencies = [
  "aes-gcm",
  "anyhow",

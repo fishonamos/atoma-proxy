@@ -895,7 +895,6 @@ pub(crate) async fn handle_node_key_rotation_event(
     let NodeKeyRotationEvent {
         epoch,
         node_id,
-        node_badge_id,
         new_public_key,
         tee_remote_attestation_bytes,
     } = event;
@@ -904,7 +903,6 @@ pub(crate) async fn handle_node_key_rotation_event(
         .update_node_public_key(
             node_id.inner as i64,
             epoch as i64,
-            node_badge_id,
             new_public_key,
             tee_remote_attestation_bytes,
         )
