@@ -221,7 +221,7 @@ pub async fn authenticate_middleware(
 /// ## Added Headers
 /// - `X-Nonce`: Base64-encoded encryption nonce
 /// - `X-Salt`: Base64-encoded salt
-/// - `X-Diffie-Hellman-Public-Key`: Server's base64-encoded X25519 public key
+/// - `X-Node-X25519-PublicKey`: Server's base64-encoded X25519 public key
 ///
 /// # Errors
 /// Returns `StatusCode::BAD_REQUEST` (400) if:
