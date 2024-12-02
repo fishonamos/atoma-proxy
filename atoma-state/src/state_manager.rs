@@ -47,11 +47,11 @@ impl AtomaStateManager {
     /// This method establishes a connection to the Postgres database using the provided URL,
     /// creates all necessary tables in the database, and returns a new `AtomaStateManager` instance.
     pub async fn new_from_url(
-        database_url: String,
+        database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
     ) -> Result<Self> {
-        let db = PgPool::connect(&database_url).await?;
+        let db = PgPool::connect(database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self {
             state: AtomaState::new(db),
@@ -176,8 +176,8 @@ impl AtomaState {
     }
 
     /// Creates a new `AtomaState` instance from a database URL.
-    pub async fn new_from_url(database_url: String) -> Result<Self> {
-        let db = PgPool::connect(&database_url).await?;
+    pub async fn new_from_url(database_url: &str) -> Result<Self> {
+        let db = PgPool::connect(database_url).await?;
         queries::create_all_tables(&db).await?;
         Ok(Self { db })
     }
@@ -547,6 +547,84 @@ impl AtomaState {
             .map(|subscription| {
                 NodeSubscription::from_row(&subscription).map_err(AtomaStateManagerError::from)
             })
+            .collect()
+    }
+
+    /// Retrieves all node subscriptions for a specific task.
+    ///
+    /// This method fetches all subscription records from the `node_subscriptions` table
+    ///
+    /// # Arguments
+    ///
+    /// * `task_small_id` - The unique identifier of the task to fetch subscriptions for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<NodeSubscription>>`: A result containing either:
+    ///   - `Ok(Vec<NodeSubscription>)`: A vector of `NodeSubscription` objects representing all found subscriptions.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    ///
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::{AtomaStateManager, NodeSubscription};
+    ///
+    /// async fn get_all_node_subscriptions_for_task(state_manager: &AtomaStateManager, task_small_id: i64) -> Result<Vec<NodeSubscription>, AtomaStateManagerError> {
+    ///    state_manager.get_all_node_subscriptions_for_task(task_small_id).await
+    /// }
+    /// ```
+    pub async fn get_all_node_subscriptions_for_task(
+        &self,
+        task_small_id: i64,
+    ) -> Result<Vec<NodeSubscription>> {
+        let subscriptions =
+            sqlx::query("SELECT * FROM node_subscriptions WHERE task_small_id = $1")
+                .bind(task_small_id)
+                .fetch_all(&self.db)
+                .await?;
+
+        subscriptions
+            .into_iter()
+            .map(|subscription| {
+                NodeSubscription::from_row(&subscription).map_err(AtomaStateManagerError::from)
+            })
+            .collect()
+    }
+
+    /// Retrieves all stacks that are not settled.
+    ///
+    /// This method fetches all stack records from the `stacks` table that are not in the settle period.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all stacks that are not in the settle period.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_current_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    ///    state_manager.get_current_stacks().await
+    /// }
+    /// ```
+    pub async fn get_current_stacks(&self) -> Result<Vec<Stack>> {
+        let stacks = sqlx::query("SELECT * FROM stacks WHERE in_settle_period = false")
+            .fetch_all(&self.db)
+            .await?;
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
             .collect()
     }
 
