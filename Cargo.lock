@@ -583,6 +583,7 @@ dependencies = [
  "sui-sdk",
  "tokenizers",
  "tokio",
+ "tower 0.5.1",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

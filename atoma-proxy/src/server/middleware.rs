@@ -9,6 +9,7 @@ use axum::{
     response::Response,
 };
 use base64::engine::{general_purpose::STANDARD, Engine};
+use reqwest::header::CONTENT_LENGTH;
 use reqwest::StatusCode;
 use serde_json::Value;
 use tracing::{error, instrument};
@@ -28,6 +29,15 @@ use super::{
     },
     http_server::ProxyState,
 };
+
+pub mod constants {
+    pub const STACK_SMALL_ID: &str = "X-Stack-Small-Id";
+    pub const SIGNATURE: &str = "X-Signature";
+    pub const NONCE: &str = "X-Nonce";
+    pub const SALT: &str = "X-Salt";
+    pub const TX_DIGEST: &str = "X-Tx-Digest";
+    pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
+}
 
 /// Maximum size of the body in bytes.
 /// This is to prevent DoS attacks by limiting the size of the request body.
@@ -160,15 +170,15 @@ pub async fn authenticate_middleware(
             error!("Failed to convert content length to header value: {}", e);
             StatusCode::BAD_REQUEST
         })?;
-    headers.insert("X-Signature", signature_header);
-    headers.insert("X-Stack-Small-Id", stack_small_id_header);
-    headers.insert("Content-Length", content_length_header);
+    headers.insert(constants::SIGNATURE, signature_header);
+    headers.insert(constants::STACK_SMALL_ID, stack_small_id_header);
+    headers.insert(CONTENT_LENGTH, content_length_header);
     if let Some(tx_digest) = tx_digest {
         let tx_digest_header = HeaderValue::from_str(&tx_digest.base58_encode()).map_err(|e| {
             error!("Failed to convert tx digest to header value: {}", e);
             StatusCode::BAD_REQUEST
         })?;
-        headers.insert("X-Tx-Digest", tx_digest_header);
+        headers.insert(constants::TX_DIGEST, tx_digest_header);
     }
     req_parts.extensions.insert(RequestMetadataExtension {
         node_address,
@@ -227,7 +237,7 @@ pub async fn confidential_compute_middleware(
     let (mut req_parts, body) = req.into_parts();
     let x25519_public_key_header = req_parts
         .headers
-        .get("X-Node-X25519-PublicKey")
+        .get(constants::NODE_X25519_PUBLIC_KEY)
         .ok_or_else(|| {
             error!("Missing x25519-public-key header");
             StatusCode::BAD_REQUEST
@@ -276,11 +286,11 @@ pub async fn confidential_compute_middleware(
         error!("Invalid x25519-public-key header: {}", e);
         StatusCode::BAD_REQUEST
     })?;
-    req_parts.headers.insert("X-Nonce", nonce_header);
-    req_parts.headers.insert("X-Salt", salt_header);
+    req_parts.headers.insert(constants::NONCE, nonce_header);
+    req_parts.headers.insert(constants::SALT, salt_header);
     req_parts
         .headers
-        .insert("X-Diffie-Hellman-Public-Key", x25519_public_key_header);
+        .insert(constants::NODE_X25519_PUBLIC_KEY, x25519_public_key_header);
     let req = Request::from_parts(req_parts, Body::from(encrypted_plaintext));
     Ok(next.run(req).await)
 }
@@ -684,7 +694,7 @@ pub(crate) mod utils {
     ) -> Result<ProcessedRequest, StatusCode> {
         match endpoint {
             CHAT_COMPLETIONS_PATH | CONFIDENTIAL_CHAT_COMPLETIONS_PATH => {
-                let request_model = RequestModelChatCompletions::new(&body_json).map_err(|_| {
+                let request_model = RequestModelChatCompletions::new(body_json).map_err(|_| {
                     error!("Failed to parse body as chat completions request model");
                     StatusCode::BAD_REQUEST
                 })?;
@@ -692,12 +702,12 @@ pub(crate) mod utils {
                     request_model,
                     &state.0,
                     req_parts.headers.clone(),
-                    &body_json,
+                    body_json,
                 )
                 .await
             }
             EMBEDDINGS_PATH | CONFIDENTIAL_EMBEDDINGS_PATH => {
-                let request_model = RequestModelEmbeddings::new(&body_json).map_err(|_| {
+                let request_model = RequestModelEmbeddings::new(body_json).map_err(|_| {
                     error!("Failed to parse body as embeddings request model");
                     StatusCode::BAD_REQUEST
                 })?;
@@ -705,25 +715,24 @@ pub(crate) mod utils {
                     request_model,
                     &state.0,
                     req_parts.headers.clone(),
-                    &body_json,
+                    body_json,
                 )
                 .await
             }
             IMAGE_GENERATIONS_PATH | CONFIDENTIAL_IMAGE_GENERATIONS_PATH => {
-                let request_model =
-                    RequestModelImageGenerations::new(&body_json).map_err(|_| {
-                        error!("Failed to parse body as image generations request model");
-                        StatusCode::BAD_REQUEST
-                    })?;
+                let request_model = RequestModelImageGenerations::new(body_json).map_err(|_| {
+                    error!("Failed to parse body as image generations request model");
+                    StatusCode::BAD_REQUEST
+                })?;
                 authenticate_and_process(
                     request_model,
                     &state.0,
                     req_parts.headers.clone(),
-                    &body_json,
+                    body_json,
                 )
                 .await
             }
-            _ => return Err(StatusCode::NOT_FOUND),
+            _ => Err(StatusCode::NOT_FOUND),
         }
     }
 
@@ -814,7 +823,7 @@ pub(crate) mod utils {
                 })?;
             let x25519_dalek_public_key_str = STANDARD.encode(x25519_dalek_public_key);
             headers.insert(
-                "X-Node-X25519-PublicKey",
+                constants::NODE_X25519_PUBLIC_KEY,
                 HeaderValue::from_str(&x25519_dalek_public_key_str).map_err(|e| {
                     error!("Failed to convert x25519 public key to header value: {}", e);
                     StatusCode::BAD_REQUEST

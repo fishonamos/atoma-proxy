@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use tokenizers::Tokenizer;
 use tokio::sync::watch;
 use tokio::{net::TcpListener, sync::RwLock};
+use tower::ServiceBuilder;
 use tracing::{error, instrument};
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 use zeroize::Zeroizing;
@@ -33,7 +34,7 @@ use super::components;
 use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
 use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
 use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
-use super::middleware::confidential_compute_middleware;
+use super::middleware::{authenticate_middleware, confidential_compute_middleware};
 use super::AtomaServiceConfig;
 
 /// Path for health check endpoint.
@@ -106,6 +107,7 @@ impl ProxyState {
     /// Returns the public key for the X25519 key exchange.
     ///
     /// This key is used to compute shared secrets with nodes' public keys.
+    #[allow(dead_code)]
     pub fn public_key(&self) -> PublicKey {
         PublicKey::from(&**self.secret_key)
     }
@@ -382,16 +384,21 @@ pub fn create_router(state: ProxyState) -> Router {
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
             post(image_generations_handler),
         )
-        .layer(from_fn_with_state(
-            state.clone(),
-            confidential_compute_middleware,
-        ))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn_with_state(state.clone(), authenticate_middleware))
+                .layer(from_fn_with_state(
+                    state.clone(),
+                    confidential_compute_middleware,
+                )),
+        )
         .with_state(state.clone());
 
     Router::new()
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
         .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .layer(from_fn_with_state(state.clone(), authenticate_middleware))
         .route(MODELS_PATH, get(models_handler))
         .route(
             NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,

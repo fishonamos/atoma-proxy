@@ -31,6 +31,7 @@ tracing-appender.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "json", "time"] }
 tracing.workspace = true
 tokenizers.workspace = true
+tower = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
