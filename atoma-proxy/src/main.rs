@@ -1,7 +1,8 @@
 use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
-use atoma_state::{AtomaStateManager, AtomaStateManagerConfig};
+use atoma_proxy_service::{run_proxy_service, AtomaProxyServiceConfig, ProxyServiceState};
+use atoma_state::{AtomaState, AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
 use atoma_utils::spawn_with_shutdown;
 use clap::Parser;
@@ -10,7 +11,7 @@ use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use server::{start_server, AtomaServiceConfig};
 use sui::Sui;
 use tokenizers::Tokenizer;
-use tokio::{sync::watch, try_join};
+use tokio::{net::TcpListener, sync::watch, try_join};
 use tracing::{error, instrument};
 use tracing_appender::{
     non_blocking,
@@ -53,6 +54,9 @@ struct Config {
 
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
+
+    /// Configuration for the proxy service component.
+    proxy_service: AtomaProxyServiceConfig,
 }
 
 impl Config {
@@ -60,7 +64,8 @@ impl Config {
         Self {
             sui: AtomaSuiConfig::from_file_path(path.clone()),
             service: AtomaServiceConfig::from_file_path(path.clone()),
-            state: AtomaStateManagerConfig::from_file_path(path),
+            state: AtomaStateManagerConfig::from_file_path(path.clone()),
+            proxy_service: AtomaProxyServiceConfig::from_file_path(path),
         }
     }
 }
@@ -132,7 +137,7 @@ async fn main() -> Result<()> {
 
     // Initialize your StateManager here
     let state_manager = AtomaStateManager::new_from_url(
-        config.state.database_url,
+        &config.state.database_url,
         event_subscriber_receiver,
         state_manager_receiver,
     )
@@ -161,6 +166,23 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
+    let proxy_service_tcp_listener = TcpListener::bind(&config.proxy_service.service_bind_address)
+        .await
+        .context("Failed to bind proxy service TCP listener")?;
+
+    let proxy_service_state = ProxyServiceState {
+        atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
+    };
+
+    let proxy_service_handle = spawn_with_shutdown(
+        run_proxy_service(
+            proxy_service_state,
+            proxy_service_tcp_listener,
+            shutdown_receiver.clone(),
+        ),
+        shutdown_sender.clone(),
+    );
+
     let ctrl_c = tokio::task::spawn(async move {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -172,14 +194,20 @@ async fn main() -> Result<()> {
         }
     });
 
-    let (sui_subscriber_result, server_result, state_manager_result, _) = try_join!(
+    let (sui_subscriber_result, server_result, state_manager_result, proxy_service_result, _) = try_join!(
         sui_subscriber_handle,
         server_handle,
         state_manager_handle,
+        proxy_service_handle,
         ctrl_c
     )?;
 
-    handle_tasks_results(sui_subscriber_result, state_manager_result, server_result)?;
+    handle_tasks_results(
+        sui_subscriber_result,
+        state_manager_result,
+        server_result,
+        proxy_service_result,
+    )?;
     Ok(())
 }
 
@@ -277,6 +305,7 @@ fn handle_tasks_results(
     sui_subscriber_result: Result<()>,
     state_manager_result: Result<()>,
     server_result: Result<()>,
+    proxy_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -293,5 +322,6 @@ fn handle_tasks_results(
     result_handler(sui_subscriber_result, "Subscriber terminated abruptly")?;
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
+    result_handler(proxy_service_result, "Proxy service terminated abruptly")?;
     Ok(())
 }

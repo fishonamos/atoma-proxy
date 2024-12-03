@@ -264,7 +264,10 @@ async fn handle_non_streaming_response(
         .headers(headers)
         .header("X-Signature", signature)
         .header("X-Stack-Small-Id", selected_stack_small_id)
-        .header("Content-Length", payload.to_string().len()); // Set the real length of the payload
+        .header(
+            reqwest::header::CONTENT_LENGTH,
+            payload.to_string().len().to_string(),
+        ); // Set the real length of the payload
     let req_builder = if let Some(tx_digest) = tx_digest {
         req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
     } else {
