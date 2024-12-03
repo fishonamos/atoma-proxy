@@ -1,5 +1,5 @@
 [workspace]
-members = ["atoma-proxy", "atoma-state"]
+members = ["atoma-proxy-service", "atoma-proxy", "atoma-state"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,6 +9,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1.0.91"
 async-trait = "0.1.83"
+atoma-proxy-service = { path = "./atoma-proxy-service" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-sui", branch = "main" }
 atoma-utils = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-utils", branch = "main" }
@@ -25,7 +26,10 @@ reqwest = "0.12.9"
 serde = "1.0.214"
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"
-sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.8.2", features = [
+  "postgres",
+  "runtime-tokio-native-tls",
+] }
 sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys" }
 sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk" }
 thiserror = "1.0.65"

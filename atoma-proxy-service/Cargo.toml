@@ -1,0 +1,17 @@
+[package]
+name = "atoma-proxy-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+atoma-state.workspace = true
+atoma-sui.workspace = true
+axum.workspace = true
+config.workspace = true
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+utoipa = { workspace = true, features = ["axum_extras"] }
