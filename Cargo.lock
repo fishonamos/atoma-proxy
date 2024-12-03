@@ -557,27 +557,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "atoma-daemon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "atoma-state",
- "atoma-sui",
- "axum",
- "config",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "atoma-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "atoma-daemon",
+ "atoma-proxy-service",
  "atoma-state",
  "atoma-sui",
  "atoma-utils",
@@ -602,6 +587,22 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "atoma-proxy-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atoma-state",
+ "atoma-sui",
+ "axum",
+ "config",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "utoipa",
 ]
 
 [[package]]

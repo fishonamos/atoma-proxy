@@ -14,9 +14,9 @@ use tracing::{error, instrument};
 
 type Result<T> = std::result::Result<T, StatusCode>;
 
-/// State container for the Atoma daemon service that manages node operations and interactions.
+/// State container for the Atoma proxy service that manages node operations and interactions.
 ///
-/// The `DaemonState` struct serves as the central state management component for the Atoma daemon,
+/// The `ProxyServiceState` struct serves as the central state management component for the Atoma proxy service,
 /// containing essential components for interacting with the Sui blockchain and managing node state.
 /// It is designed to be shared across multiple request handlers and maintains thread-safe access
 /// to shared resources.
@@ -31,29 +31,29 @@ type Result<T> = std::result::Result<T, StatusCode>;
 /// # Example
 ///
 /// ```rust,ignore
-/// // Create a new daemon state instance
-/// let daemon_state = DaemonState {
+/// // Create a new proxy_service state instance
+/// let proxy_service_state = ProxyServiceState {
 ///     client: Arc::new(RwLock::new(AtomaSuiClient::new())),
 ///     state_manager: AtomaStateManager::new(),
 ///     node_badges: vec![(ObjectID::new([0; 32]), 1)],
 /// };
 ///
 /// // Clone the state for use in different handlers
-/// let handler_state = daemon_state.clone();
+/// let handler_state = proxy_service_state.clone();
 /// ```
 #[derive(Clone)]
-pub struct DaemonState {
+pub struct ProxyServiceState {
     /// Manages the persistent state of nodes, tasks, and other system components.
     /// Handles database operations and state synchronization.
     pub atoma_state: AtomaState,
 }
 
-/// Starts and runs the Atoma daemon service, handling HTTP requests and graceful shutdown.
-/// This function initializes and runs the main daemon service that handles node operations,
+/// Starts and runs the Atoma proxy service service, handling HTTP requests and graceful shutdown.
+/// This function initializes and runs the main proxy_service service that handles node operations,
 ///
 /// # Arguments
 ///
-/// * `daemon_state` - The shared state container for the daemon service, containing the Sui client,
+/// * `proxy_service_state` - The shared state container for the proxy service service, containing the Sui client,
 ///   state manager, and node badge information
 /// * `tcp_listener` - A pre-configured TCP listener that the HTTP server will bind to
 ///
@@ -74,22 +74,22 @@ pub struct DaemonState {
 /// ```rust,ignore
 /// use tokio::net::TcpListener;
 /// use tokio::sync::watch;
-/// use atoma_daemon::{DaemonState, run_daemon};
+/// use atoma_proxy_service::{ProxyServiceState, run_proxy_service};
 ///
 /// async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
-///     let daemon_state = DaemonState::new(/* ... */);
+///     let proxy_service_state = ProxyServiceState::new(/* ... */);
 ///     let listener = TcpListener::bind("127.0.0.1:3000").await?;
 ///     
-///     run_daemon(daemon_state, listener).await
+///     run_proxy_service(proxy_service_state, listener).await
 /// }
 /// ```
-pub async fn run_daemon(
-    daemon_state: DaemonState,
+pub async fn run_proxy_service(
+    proxy_service_state: ProxyServiceState,
     tcp_listener: TcpListener,
     mut shutdown_receiver: Receiver<bool>,
 ) -> anyhow::Result<()> {
-    let daemon_router = create_daemon_router(daemon_state);
-    let server = axum::serve(tcp_listener, daemon_router.into_make_service())
+    let proxy_service_router = create_proxy_service_router(proxy_service_state);
+    let server = axum::serve(tcp_listener, proxy_service_router.into_make_service())
         .with_graceful_shutdown(async move {
             shutdown_receiver
                 .changed()
@@ -100,10 +100,10 @@ pub async fn run_daemon(
     Ok(())
 }
 
-/// Creates and configures the main router for the Atoma daemon HTTP API.
+/// Creates and configures the main router for the Atoma proxy service HTTP API.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state container that will be available to all route handlers
+/// * `proxy_service_state` - The shared state container that will be available to all route handlers
 ///
 /// # Returns
 /// * `Router` - A configured axum Router instance with all API routes and shared state
@@ -143,38 +143,49 @@ pub async fn run_daemon(
 ///
 /// # Example
 /// ```rust,ignore
-/// use atoma_daemon::DaemonState;
+/// use atoma_proxy_service::ProxyServiceState;
 ///
-/// let daemon_state = DaemonState::new(/* ... */);
-/// let app = create_daemon_router(daemon_state);
+/// let proxy_service_state = ProxyServiceState::new(/* ... */);
+/// let app = create_proxy_service_router(proxy_service_state);
 /// // Start the server with the configured router
 /// axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
 ///     .serve(app.into_make_service())
 ///     .await?;
 /// ```
-pub fn create_daemon_router(daemon_state: DaemonState) -> Router {
+pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Router {
     Router::new()
-        .route("/subscriptions/:id", get(get_node_subscriptions))
+        .route("/subscriptions", get(get_all_subscriptions))
         .route("/tasks", get(get_all_tasks))
         .route("/task/:id", get(get_nodes_for_tasks))
         .route("/stacks/:id", get(get_node_stacks))
         .route("/get_stacks", get(get_current_stacks))
-        .with_state(daemon_state)
+        .with_state(proxy_service_state)
         .route("/health", get(health))
 }
 
 /// Retrieves all stacks that are not settled.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state containing the state manager
+/// * `proxy_service_state` - The shared state containing the state manager
 ///
 /// # Returns
 /// * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
 ///   - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
 ///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
-async fn get_current_stacks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Stack>>> {
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all stacks that are not settled", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all stacks")
+    )
+)]
+#[instrument(level = "trace", skip_all)]
+async fn get_current_stacks(
+    State(proxy_service_state): State<ProxyServiceState>,
+) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
-        daemon_state
+        proxy_service_state
             .atoma_state
             .get_current_stacks()
             .await
@@ -185,11 +196,10 @@ async fn get_current_stacks(State(daemon_state): State<DaemonState>) -> Result<J
     ))
 }
 
-/// Retrieves all subscriptions for a specific node identified by its small ID.
+/// Retrieves all subscriptions.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state containing the state manager
-/// * `node_small_id` - The small ID of the node whose subscriptions should be retrieved
+/// * `proxy_service_state` - The shared state containing the state manager
 ///
 /// # Returns
 /// * `Result<Json<Vec<NodeSubscription>>>` - A JSON response containing a list of subscriptions
@@ -197,7 +207,7 @@ async fn get_current_stacks(State(daemon_state): State<DaemonState>) -> Result<J
 ///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve subscriptions from state manager
 ///
 /// # Example Response
-/// Returns a JSON array of NodeSubscription objects for the specified node, which may include:
+/// Returns a JSON array of NodeSubscription objects, which may include:
 /// ```json
 /// [
 ///     {
@@ -208,18 +218,25 @@ async fn get_current_stacks(State(daemon_state): State<DaemonState>) -> Result<J
 ///     }
 /// ]
 /// ```
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all subscriptions for all nodes", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get nodes subscriptions")
+    )
+)]
 #[instrument(level = "trace", skip_all)]
-async fn get_node_subscriptions(
-    State(daemon_state): State<DaemonState>,
-    Path(node_small_id): Path<i64>,
+async fn get_all_subscriptions(
+    State(proxy_service_state): State<ProxyServiceState>,
 ) -> Result<Json<Vec<NodeSubscription>>> {
     Ok(Json(
-        daemon_state
+        proxy_service_state
             .atoma_state
-            .get_all_node_subscriptions(&[node_small_id])
+            .get_all_node_subscriptions()
             .await
             .map_err(|_| {
-                error!("Failed to get node subscriptions");
+                error!("Failed to get nodes subscriptions");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
     ))
@@ -228,7 +245,7 @@ async fn get_node_subscriptions(
 /// Retrieves all subscriptions for a specific task identified by its task_id.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state containing the state manager
+/// * `proxy_service_state` - The shared state containing the state manager
 /// * `task_id` - The ID of the task whose subscriptions should be retrieved
 ///
 /// # Returns
@@ -248,12 +265,21 @@ async fn get_node_subscriptions(
 /// }
 /// ]
 /// ```
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all subscriptions for a specific task", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get node subscriptions")
+    )
+)]
+#[instrument(level = "trace", skip_all)]
 async fn get_nodes_for_tasks(
-    State(daemon_state): State<DaemonState>,
+    State(proxy_service_state): State<ProxyServiceState>,
     Path(task_id): Path<i64>,
 ) -> Result<Json<Vec<NodeSubscription>>> {
     Ok(Json(
-        daemon_state
+        proxy_service_state
             .atoma_state
             .get_all_node_subscriptions_for_task(task_id)
             .await
@@ -266,7 +292,7 @@ async fn get_nodes_for_tasks(
 /// Retrieves all tasks from the state manager.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state containing the state manager
+/// * `proxy_service_state` - The shared state containing the state manager
 ///
 /// # Returns
 /// * `Result<Json<Vec<Task>>>` - A JSON response containing a list of tasks
@@ -275,9 +301,19 @@ async fn get_nodes_for_tasks(
 ///
 /// # Example Response
 /// Returns a JSON array of Task objects representing all tasks in the system
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all tasks", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all tasks")
+    )
+)]
 #[instrument(level = "trace", skip_all)]
-async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<Vec<Task>>> {
-    let all_tasks = daemon_state
+async fn get_all_tasks(
+    State(proxy_service_state): State<ProxyServiceState>,
+) -> Result<Json<Vec<Task>>> {
+    let all_tasks = proxy_service_state
         .atoma_state
         .get_all_tasks()
         .await
@@ -288,10 +324,18 @@ async fn get_all_tasks(State(daemon_state): State<DaemonState>) -> Result<Json<V
     Ok(Json(all_tasks))
 }
 
-/// Health check endpoint for the daemon.
+/// Health check endpoint for the proxy service.
 ///
 /// # Returns
 /// * `StatusCode::OK` - Always returns OK
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Service is healthy", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Service is unhealthy")
+    )
+)]
 #[instrument(level = "trace", skip_all)]
 async fn health() -> StatusCode {
     StatusCode::OK
@@ -300,7 +344,7 @@ async fn health() -> StatusCode {
 /// Retrieves all stacks for a specific node identified by its small ID.
 ///
 /// # Arguments
-/// * `daemon_state` - The shared state containing the state manager
+/// * `proxy_service_state` - The shared state containing the state manager
 /// * `node_small_id` - The small ID of the node whose stacks should be retrieved
 ///
 /// # Returns
@@ -310,13 +354,21 @@ async fn health() -> StatusCode {
 ///
 /// # Example Response
 /// Returns a JSON array of Stack objects for the specified node
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all stacks for a specific node", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get node stack")
+    )
+)]
 #[instrument(level = "trace", skip_all)]
 async fn get_node_stacks(
-    State(daemon_state): State<DaemonState>,
+    State(proxy_service_state): State<ProxyServiceState>,
     Path(node_small_id): Path<i64>,
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
-        daemon_state
+        proxy_service_state
             .atoma_state
             .get_stack_by_id(node_small_id)
             .await

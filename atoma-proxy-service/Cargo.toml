@@ -1,5 +1,5 @@
 [package]
-name = "atoma-daemon"
+name = "atoma-proxy-service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,3 +14,4 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+utoipa = { workspace = true, features = ["axum_extras"] }

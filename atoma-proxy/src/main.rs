@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
-use atoma_daemon::{run_daemon, AtomaDaemonConfig, DaemonState};
+use atoma_proxy_service::{run_proxy_service, AtomaProxyServiceConfig, ProxyServiceState};
 use atoma_state::{AtomaState, AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
 use atoma_utils::spawn_with_shutdown;
@@ -55,8 +55,8 @@ struct Config {
     /// Configuration for the state manager component.
     state: AtomaStateManagerConfig,
 
-    /// Configuration for the daemon component.
-    daemon: AtomaDaemonConfig,
+    /// Configuration for the proxy service component.
+    proxy_service: AtomaProxyServiceConfig,
 }
 
 impl Config {
@@ -65,7 +65,7 @@ impl Config {
             sui: AtomaSuiConfig::from_file_path(path.clone()),
             service: AtomaServiceConfig::from_file_path(path.clone()),
             state: AtomaStateManagerConfig::from_file_path(path.clone()),
-            daemon: AtomaDaemonConfig::from_file_path(path),
+            proxy_service: AtomaProxyServiceConfig::from_file_path(path),
         }
     }
 }
@@ -166,18 +166,18 @@ async fn main() -> Result<()> {
         shutdown_sender.clone(),
     );
 
-    let daemon_tcp_listener = TcpListener::bind(&config.daemon.service_bind_address)
+    let proxy_service_tcp_listener = TcpListener::bind(&config.proxy_service.service_bind_address)
         .await
-        .context("Failed to bind daemon TCP listener")?;
+        .context("Failed to bind proxy service TCP listener")?;
 
-    let daemon_app_state = DaemonState {
+    let proxy_service_state = ProxyServiceState {
         atoma_state: AtomaState::new_from_url(&config.state.database_url).await?,
     };
 
-    let daemon_handle = spawn_with_shutdown(
-        run_daemon(
-            daemon_app_state,
-            daemon_tcp_listener,
+    let proxy_service_handle = spawn_with_shutdown(
+        run_proxy_service(
+            proxy_service_state,
+            proxy_service_tcp_listener,
             shutdown_receiver.clone(),
         ),
         shutdown_sender.clone(),
@@ -194,11 +194,11 @@ async fn main() -> Result<()> {
         }
     });
 
-    let (sui_subscriber_result, server_result, state_manager_result, daemon_result, _) = try_join!(
+    let (sui_subscriber_result, server_result, state_manager_result, proxy_service_result, _) = try_join!(
         sui_subscriber_handle,
         server_handle,
         state_manager_handle,
-        daemon_handle,
+        proxy_service_handle,
         ctrl_c
     )?;
 
@@ -206,7 +206,7 @@ async fn main() -> Result<()> {
         sui_subscriber_result,
         state_manager_result,
         server_result,
-        daemon_result,
+        proxy_service_result,
     )?;
     Ok(())
 }
@@ -305,7 +305,7 @@ fn handle_tasks_results(
     sui_subscriber_result: Result<()>,
     state_manager_result: Result<()>,
     server_result: Result<()>,
-    daemon_result: Result<()>,
+    proxy_service_result: Result<()>,
 ) -> Result<()> {
     let result_handler = |result: Result<()>, message: &str| {
         if let Err(e) = result {
@@ -322,6 +322,6 @@ fn handle_tasks_results(
     result_handler(sui_subscriber_result, "Subscriber terminated abruptly")?;
     result_handler(state_manager_result, "State manager terminated abruptly")?;
     result_handler(server_result, "Server terminated abruptly")?;
-    result_handler(daemon_result, "Daemon terminated abruptly")?;
+    result_handler(proxy_service_result, "Proxy service terminated abruptly")?;
     Ok(())
 }

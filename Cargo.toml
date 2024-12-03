@@ -1,5 +1,5 @@
 [workspace]
-members = ["atoma-daemon", "atoma-proxy", "atoma-state"]
+members = ["atoma-proxy-service", "atoma-proxy", "atoma-state"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,7 +9,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1.0.91"
 async-trait = "0.1.83"
-atoma-daemon = { path = "./atoma-daemon" }
+atoma-proxy-service = { path = "./atoma-proxy-service" }
 atoma-state = { path = "./atoma-state" }
 atoma-sui = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-sui", branch = "main" }
 atoma-utils = { git = "https://github.com/atoma-network/atoma-node.git", package = "atoma-utils", branch = "main" }

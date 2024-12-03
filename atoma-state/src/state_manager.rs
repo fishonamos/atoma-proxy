@@ -497,14 +497,9 @@ impl AtomaState {
             .collect()
     }
 
-    /// Retrieves all node subscriptions for a given set of node IDs.
+    /// Retrieves all node subscriptions.
     ///
-    /// This method fetches all subscription records from the `node_subscriptions` table
-    /// that match any of the provided node IDs.
-    ///
-    /// # Arguments
-    ///
-    /// * `node_small_ids` - A slice of node IDs to fetch subscriptions for.
+    /// This method fetches all subscription records from the `node_subscriptions` table.
     ///
     /// # Returns
     ///
@@ -524,23 +519,14 @@ impl AtomaState {
     /// use atoma_node::atoma_state::{AtomaStateManager, NodeSubscription};
     ///
     /// async fn get_subscriptions(state_manager: &AtomaStateManager) -> Result<Vec<NodeSubscription>, AtomaStateManagerError> {
-    ///     let node_ids = vec![1, 2, 3];
-    ///     state_manager.get_all_node_subscriptions(&node_ids).await
+    ///     state_manager.get_all_node_subscriptions().await
     /// }
     /// ```
-    #[instrument(level = "trace", skip_all, fields(?node_small_ids))]
-    pub async fn get_all_node_subscriptions(
-        &self,
-        node_small_ids: &[i64],
-    ) -> Result<Vec<NodeSubscription>> {
-        let mut query_builder = build_query_with_in(
-            "SELECT * FROM node_subscriptions",
-            "node_small_id",
-            node_small_ids,
-            None,
-        );
-
-        let subscriptions = query_builder.build().fetch_all(&self.db).await?;
+    #[instrument(level = "trace", skip_all)]
+    pub async fn get_all_node_subscriptions(&self) -> Result<Vec<NodeSubscription>> {
+        let subscriptions = sqlx::query("SELECT * FROM node_subscriptions")
+            .fetch_all(&self.db)
+            .await?;
 
         subscriptions
             .into_iter()
@@ -579,6 +565,7 @@ impl AtomaState {
     ///    state_manager.get_all_node_subscriptions_for_task(task_small_id).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all, fields(?task_small_id))]
     pub async fn get_all_node_subscriptions_for_task(
         &self,
         task_small_id: i64,
@@ -618,6 +605,7 @@ impl AtomaState {
     ///    state_manager.get_current_stacks().await
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     pub async fn get_current_stacks(&self) -> Result<Vec<Stack>> {
         let stacks = sqlx::query("SELECT * FROM stacks WHERE in_settle_period = false")
             .fetch_all(&self.db)
