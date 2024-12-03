@@ -1,5 +1,5 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeKeyRotationEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
     NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
     StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
     StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
@@ -60,7 +60,7 @@ pub async fn handle_atoma_event(
             info!("New key rotation event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::NodeKeyRotationEvent(event) => {
+        AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
             handle_node_key_rotation_event(state_manager, event).await
         }
         AtomaEvent::PublishedEvent(event) => {
@@ -889,10 +889,10 @@ pub(crate) async fn handle_state_manager_event(
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_node_key_rotation_event(
     state_manager: &AtomaStateManager,
-    event: NodeKeyRotationEvent,
+    event: NodePublicKeyCommittmentEvent,
 ) -> Result<()> {
     info!("Node key rotation event: {:?}", event);
-    let NodeKeyRotationEvent {
+    let NodePublicKeyCommittmentEvent {
         epoch,
         node_id,
         new_public_key,
