@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::server::{http_server::ProxyState, streamer::Streamer};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
-use axum::http::{HeaderName, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response, Sse};
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
