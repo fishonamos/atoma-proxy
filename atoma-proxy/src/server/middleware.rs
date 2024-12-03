@@ -129,7 +129,11 @@ pub struct RequestMetadataExtension {
 ///     .route("/", get(handler))
 ///     .layer(middleware::from_fn(authenticate_middleware));
 /// ```
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(endpoint = %req.uri().path())
+)]
 pub async fn authenticate_middleware(
     state: State<ProxyState>,
     req: Request<Body>,
@@ -187,6 +191,8 @@ pub async fn authenticate_middleware(
         selected_stack_small_id: stack_small_id,
     });
     utils::handle_confidential_compute_content(state, &mut headers, &endpoint, node_id).await?;
+    // update headers
+    req_parts.headers = headers;
     let req = Request::from_parts(req_parts, Body::from(body_bytes));
     Ok(next.run(req).await)
 }
@@ -228,7 +234,11 @@ pub async fn authenticate_middleware(
 /// - Required headers are missing or malformed
 /// - Request body exceeds maximum size
 /// - Any cryptographic operations fail
-#[instrument(level = "trace", skip_all)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(endpoint = %req.uri().path())
+)]
 pub async fn confidential_compute_middleware(
     state: State<ProxyState>,
     req: Request<Body>,
@@ -476,6 +486,7 @@ pub(crate) mod auth {
                 }
             }
         }
+        error!("Invalid password for request");
         false
     }
 

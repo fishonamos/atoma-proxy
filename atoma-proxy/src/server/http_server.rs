@@ -294,6 +294,7 @@ pub(crate) struct NodePublicAddressRegistrationOpenApi;
         (status = INTERNAL_SERVER_ERROR, description = "Failed to register node public address")
     )
 )]
+#[instrument(level = "info", skip_all)]
 pub async fn node_public_address_registration(
     State(state): State<ProxyState>,
     Json(payload): Json<NodePublicAddressAssignment>,
@@ -362,9 +363,9 @@ pub async fn health() -> Result<Json<Value>, StatusCode> {
 ///
 /// ## Confidential Routes
 /// Secure variants of the processing endpoints:
-/// - POST `/confidential/v1/chat/completions`
-/// - POST `/confidential/v1/embeddings`
-/// - POST `/confidential/v1/images/generations`
+/// - POST `/v1/confidential/chat/completions`
+/// - POST `/v1/confidential/embeddings`
+/// - POST `/v1/confidential/images/generations`
 ///
 /// # Arguments
 ///
@@ -398,7 +399,11 @@ pub fn create_router(state: ProxyState) -> Router {
         .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
         .route(EMBEDDINGS_PATH, post(embeddings_handler))
         .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
-        .layer(from_fn_with_state(state.clone(), authenticate_middleware))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn_with_state(state.clone(), authenticate_middleware))
+                .into_inner(),
+        )
         .route(MODELS_PATH, get(models_handler))
         .route(
             NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
@@ -406,8 +411,8 @@ pub fn create_router(state: ProxyState) -> Router {
         )
         .with_state(state.clone())
         .route(HEALTH_PATH, get(health))
-        .merge(openapi_routes())
         .merge(confidential_router)
+        .merge(openapi_routes())
 }
 
 /// Starts the atoma proxy server.

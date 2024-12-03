@@ -165,12 +165,6 @@ pub async fn chat_completions_handler(
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let mut payload = payload;
-    if is_streaming {
-        payload["stream_options"] = serde_json::json!({
-            "include_usage": true
-        });
-    }
     if is_streaming {
         handle_streaming_response(
             state,
