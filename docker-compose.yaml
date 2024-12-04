@@ -13,24 +13,24 @@ services:
     networks:
       - atoma-network
 
-  atoma-proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-       TRACE_LEVEL: ${TRACE_LEVEL:-info}
-    volumes:
-      - ./config.toml:/app/config.toml
-      - ./logs:/app/logs
-      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
-    env_file:
-      - .env
-    ports:
-      - "${ATOMA_SERVICE_PORT:-8080}:8080"  # Expose Atoma service port
-    depends_on:
-      - db
-    networks:
-      - atoma-network
+  # atoma-proxy:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     args:
+  #      TRACE_LEVEL: ${TRACE_LEVEL:-info}
+  #   volumes:
+  #     - ./config.toml:/app/config.toml
+  #     - ./logs:/app/logs
+  #     - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "${ATOMA_SERVICE_PORT:-8080}:8080"  # Expose Atoma service port
+  #   depends_on:
+  #     - db
+  #   networks:
+  #     - atoma-network
 
 volumes:
   postgres-data:

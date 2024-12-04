@@ -3006,12 +3006,12 @@ pub(crate) mod queries {
                 node_small_id BIGINT PRIMARY KEY,
                 epoch BIGINT NOT NULL,
                 public_key BYTEA NOT NULL,
-                tee_remote_attestation_bytes BYTEA NOT NULL,
-                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
+                tee_remote_attestation_bytes BYTEA NOT NULL
             )",
         )
         .execute(db)
         .await?;
+
         Ok(())
     }
 
@@ -3023,6 +3023,10 @@ pub(crate) mod queries {
     /// - stacks
     /// - stack_settlement_tickets
     /// - stack_attestation_disputes
+    /// - node_public_addresses
+    /// - node_throughput_performance
+    /// - node_latency_performance
+    /// - node_public_keys
     ///
     /// # Arguments
     ///

@@ -38,7 +38,7 @@ pub async fn handle_atoma_event(
         }
         AtomaEvent::StackCreateAndUpdateEvent(event) => {
             // NOTE: Don't handle creation here. It's handled when the stack is created right away.
-            info!("Stack create and update event: {:?}", event);
+            info!("Stack creates and update event: {:?}", event);
             Ok(())
         }
         AtomaEvent::StackTrySettleEvent(event) => {
