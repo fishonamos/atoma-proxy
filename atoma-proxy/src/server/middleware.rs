@@ -486,7 +486,7 @@ pub(crate) mod auth {
                 }
             }
         }
-        error!("Invalid password for request");
+        error!("Invalid or missing password for request");
         false
     }
 

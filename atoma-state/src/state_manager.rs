@@ -3006,7 +3006,8 @@ pub(crate) mod queries {
                 node_small_id BIGINT PRIMARY KEY,
                 epoch BIGINT NOT NULL,
                 public_key BYTEA NOT NULL,
-                tee_remote_attestation_bytes BYTEA NOT NULL
+                tee_remote_attestation_bytes BYTEA NOT NULL,
+                FOREIGN KEY (node_small_id) REFERENCES node_public_addresses (node_small_id)
             )",
         )
         .execute(db)
