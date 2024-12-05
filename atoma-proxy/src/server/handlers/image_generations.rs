@@ -4,16 +4,27 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Extension;
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
-use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
 use crate::server::http_server::ProxyState;
+use crate::server::middleware::RequestMetadataExtension;
 
 use super::request_model::RequestModel;
-use super::{authenticate_and_process, ProcessedRequest};
+
+/// Path for the confidential image generations endpoint.
+///
+/// This endpoint follows the OpenAI API format for image generations, with additional
+/// confidential processing (through AEAD encryption and TEE hardware).
+pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/generations";
+
+/// Path for the image generations endpoint.
+///
+/// This endpoint follows the OpenAI API format for image generations
+pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
 /// A model representing the parameters for an image generation request.
 ///
@@ -28,9 +39,6 @@ pub struct RequestModelImageGenerations {
     /// (e.g., "1024x1024")
     size: String,
 }
-
-/// Path for the image generations endpoint.
-pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
@@ -86,24 +94,22 @@ impl RequestModel for RequestModelImageGenerations {
 
 /// Handles incoming requests for AI image generation.
 ///
-/// This endpoint processes requests to generate images using AI models. It performs the following steps:
-/// 1. Validates and parses the incoming request payload
-/// 2. Authenticates the request and processes billing/compute units
-/// 3. Forwards the request to the appropriate AI node for image generation
+/// This endpoint processes requests to generate images using AI models by forwarding them
+/// to the appropriate AI node. The request metadata and compute units have already been
+/// validated by middleware before reaching this handler.
 ///
 /// # Arguments
+/// * `metadata` - Extension containing pre-processed request metadata (node address, compute units, etc.)
 /// * `state` - Application state containing configuration and shared resources
 /// * `headers` - HTTP headers from the incoming request
-/// * `payload` - JSON payload containing image generation parameters (model, size, number of images)
+/// * `payload` - JSON payload containing image generation parameters
 ///
 /// # Returns
-/// * `Result<Response<Body>, StatusCode>` - Either a successful response containing the generated
-///   images or an error status code
+/// * `Result<Response<Body>, StatusCode>` - The processed response from the AI node or an error status
 ///
 /// # Errors
-/// * `BAD_REQUEST` - If the request payload is invalid or missing required fields
-/// * `UNAUTHORIZED` - If authentication fails
-/// * `INTERNAL_SERVER_ERROR` - If there's an error processing the request or communicating with the AI node
+/// * Returns various status codes based on the underlying `handle_image_generation_response`:
+///   - `INTERNAL_SERVER_ERROR` - If there's an error communicating with the AI node
 ///
 /// # Example Payload
 /// ```json
@@ -129,32 +135,18 @@ impl RequestModel for RequestModelImageGenerations {
     fields(endpoint = IMAGE_GENERATIONS_PATH, payload = ?payload)
 )]
 pub async fn image_generations_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, StatusCode> {
-    let request_model = RequestModelImageGenerations::new(&payload)?;
-
-    let ProcessedRequest {
-        node_address,
-        node_id: selected_node_id,
-        signature,
-        stack_small_id: selected_stack_small_id,
-        headers,
-        num_compute_units: total_tokens,
-        tx_digest,
-    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
-
     handle_image_generation_response(
         state,
-        node_address,
-        selected_node_id,
-        signature,
-        selected_stack_small_id,
+        metadata.node_address,
+        metadata.node_id,
         headers,
         payload,
-        total_tokens as i64,
-        tx_digest,
+        metadata.num_compute_units as i64,
     )
     .await
 }
@@ -202,28 +194,16 @@ async fn handle_image_generation_response(
     state: ProxyState,
     node_address: String,
     selected_node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     total_tokens: i64,
-    tx_digest: Option<TransactionDigest>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, IMAGE_GENERATIONS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id);
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
-        .header("Content-Length", payload.to_string().len())
         .json(&payload)
         .send()
         .await

@@ -12,12 +12,14 @@ atoma-state.workspace = true
 atoma-sui.workspace = true
 atoma-utils.workspace = true
 axum = { workspace = true, features = ["json"] }
+base64 = { workspace = true }
 blake2.workspace = true
 clap.workspace = true
 config.workspace = true
 flume.workspace = true
 futures = { workspace = true }
 hf-hub = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -30,5 +32,8 @@ tracing-appender.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "json", "time"] }
 tracing.workspace = true
 tokenizers.workspace = true
+tower = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+x25519-dalek = { workspace = true, features = ["static_secrets"] }
+zeroize = { workspace = true }

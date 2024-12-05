@@ -1,8 +1,8 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodeSubscribedToTaskEvent,
-    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
+    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent,
+    StackAttestationDisputeEvent, StackCreatedEvent, StackSettlementTicketClaimedEvent,
+    StackSettlementTicketEvent, StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use tracing::{info, instrument, trace};
 
@@ -38,7 +38,7 @@ pub async fn handle_atoma_event(
         }
         AtomaEvent::StackCreateAndUpdateEvent(event) => {
             // NOTE: Don't handle creation here. It's handled when the stack is created right away.
-            info!("Stack create and update event: {:?}", event);
+            info!("Stack creates and update event: {:?}", event);
             Ok(())
         }
         AtomaEvent::StackTrySettleEvent(event) => {
@@ -55,6 +55,13 @@ pub async fn handle_atoma_event(
         }
         AtomaEvent::NewStackSettlementAttestationEvent(event) => {
             handle_new_stack_settlement_attestation_event(state_manager, event).await
+        }
+        AtomaEvent::NewKeyRotationEvent(event) => {
+            info!("New key rotation event: {:?}", event);
+            Ok(())
+        }
+        AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
+            handle_node_key_rotation_event(state_manager, event).await
         }
         AtomaEvent::PublishedEvent(event) => {
             info!("Published event: {:?}", event);
@@ -826,6 +833,79 @@ pub(crate) async fn handle_state_manager_event(
                 .update_node_latency_performance(node_small_id, latency)
                 .await?;
         }
+        AtomaAtomaStateManagerEvent::GetSelectedNodeX25519PublicKey {
+            selected_node_id,
+            result_sender,
+        } => {
+            let public_key = state_manager
+                .state
+                .get_selected_node_x25519_public_key(selected_node_id)
+                .await;
+            result_sender
+                .send(public_key)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
     }
+    Ok(())
+}
+
+/// Handles a node key rotation event by updating the node's public key in the database.
+///
+/// This function processes a node key rotation event, which occurs when a node updates its
+/// cryptographic keys. It extracts the relevant information from the event and updates
+/// the node's public key and associated data in the state database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations
+/// * `event` - A `NodeKeyRotationEvent` containing the details of the key rotation:
+///   * `epoch` - The epoch number when the key rotation occurred
+///   * `node_id` - The identifier of the node performing the key rotation
+///   * `node_badge_id` - The badge identifier associated with the node
+///   * `new_public_key` - The new public key for the node
+///   * `tee_remote_attestation_bytes` - Remote attestation data for trusted execution environment
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the key rotation was processed successfully, or an error if something went wrong
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to update the node's public key fails
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use atoma_state::AtomaStateManager;
+/// use atoma_sui::events::NodeKeyRotationEvent;
+///
+/// async fn rotate_key(state_manager: &AtomaStateManager, event: NodeKeyRotationEvent) {
+///     if let Err(e) = handle_node_key_rotation_event(state_manager, event).await {
+///         eprintln!("Failed to handle key rotation: {}", e);
+///     }
+/// }
+/// ```
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_node_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NodePublicKeyCommittmentEvent,
+) -> Result<()> {
+    info!("Node key rotation event: {:?}", event);
+    let NodePublicKeyCommittmentEvent {
+        epoch,
+        node_id,
+        new_public_key,
+        tee_remote_attestation_bytes,
+    } = event;
+    state_manager
+        .state
+        .update_node_public_key(
+            node_id.inner as i64,
+            epoch as i64,
+            new_public_key,
+            tee_remote_attestation_bytes,
+        )
+        .await?;
     Ok(())
 }

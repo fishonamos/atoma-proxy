@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::http::StatusCode;
+use axum::middleware::from_fn_with_state;
 use axum::{
     extract::State,
     routing::{get, post},
@@ -14,7 +15,10 @@ use serde_json::{json, Value};
 use tokenizers::Tokenizer;
 use tokio::sync::watch;
 use tokio::{net::TcpListener, sync::RwLock};
+use tower::ServiceBuilder;
 use tracing::{error, instrument};
+use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
+use zeroize::Zeroizing;
 
 pub use components::openapi::openapi_routes;
 use utoipa::{OpenApi, ToSchema};
@@ -27,6 +31,10 @@ use crate::server::handlers::{
 use crate::sui::Sui;
 
 use super::components;
+use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
+use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
+use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
+use super::middleware::{authenticate_middleware, confidential_compute_middleware};
 use super::AtomaServiceConfig;
 
 /// Path for health check endpoint.
@@ -86,6 +94,31 @@ pub struct ProxyState {
     /// application to dynamically select and switch between different
     /// models as needed.
     pub models: Arc<Vec<String>>,
+
+    /// Secret key for X25519 key exchange.
+    ///
+    /// This key is used to compute shared secrets with nodes' public keys.
+    /// The key is wrapped in both Arc (for shared ownership) and Zeroizing
+    /// (to ensure the key material is securely erased from memory when dropped).
+    secret_key: Arc<Zeroizing<StaticSecret>>,
+}
+
+impl ProxyState {
+    /// Returns the public key for the X25519 key exchange.
+    ///
+    /// This key is used to compute shared secrets with nodes' public keys.
+    #[allow(dead_code)]
+    pub fn public_key(&self) -> PublicKey {
+        PublicKey::from(&**self.secret_key)
+    }
+
+    /// Computes the shared secret for the X25519 key exchange.
+    ///
+    /// This function computes the shared secret between the proxy's secret key
+    /// and a given node's public key.
+    pub fn compute_shared_secret(&self, public_key: &PublicKey) -> SharedSecret {
+        self.secret_key.diffie_hellman(public_key)
+    }
 }
 
 /// OpenAPI documentation for the models listing endpoint.
@@ -261,6 +294,7 @@ pub(crate) struct NodePublicAddressRegistrationOpenApi;
         (status = INTERNAL_SERVER_ERROR, description = "Failed to register node public address")
     )
 )]
+#[instrument(level = "info", skip_all)]
 pub async fn node_public_address_registration(
     State(state): State<ProxyState>,
     Json(payload): Json<NodePublicAddressAssignment>,
@@ -310,6 +344,77 @@ pub async fn health() -> Result<Json<Value>, StatusCode> {
     Ok(Json(json!({ "status": "ok" })))
 }
 
+/// Creates a router with the appropriate routes and state for the atoma proxy service.
+///
+/// This function sets up two sets of routes:
+/// 1. Standard routes for public API endpoints
+/// 2. Confidential routes for secure processing
+///
+/// # Routes
+///
+/// ## Standard Routes
+/// - POST `/v1/chat/completions` - Chat completion endpoint
+/// - POST `/v1/embeddings` - Text embedding generation
+/// - POST `/v1/images/generations` - Image generation
+/// - GET `/v1/models` - List available AI models
+/// - POST `/node/registration` - Node public address registration
+/// - GET `/health` - Service health check
+/// - OpenAPI documentation routes
+///
+/// ## Confidential Routes
+/// Secure variants of the processing endpoints:
+/// - POST `/v1/confidential/chat/completions`
+/// - POST `/v1/confidential/embeddings`
+/// - POST `/v1/confidential/images/generations`
+///
+/// # Arguments
+///
+/// * `state` - Shared application state containing configuration and resources
+///
+/// # Returns
+///
+/// Returns an configured `Router` instance with all routes and middleware set up
+pub fn create_router(state: ProxyState) -> Router {
+    let confidential_router = Router::new()
+        .route(
+            CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+            post(chat_completions_handler),
+        )
+        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(
+            CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+            post(image_generations_handler),
+        )
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn_with_state(state.clone(), authenticate_middleware))
+                .layer(from_fn_with_state(
+                    state.clone(),
+                    confidential_compute_middleware,
+                )),
+        )
+        .with_state(state.clone());
+
+    Router::new()
+        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
+        .route(EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn_with_state(state.clone(), authenticate_middleware))
+                .into_inner(),
+        )
+        .route(MODELS_PATH, get(models_handler))
+        .route(
+            NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
+            post(node_public_address_registration),
+        )
+        .with_state(state.clone())
+        .route(HEALTH_PATH, get(health))
+        .merge(confidential_router)
+        .merge(openapi_routes())
+}
+
 /// Starts the atoma proxy server.
 ///
 /// This function starts the atoma proxy server by binding to the specified address
@@ -334,25 +439,16 @@ pub async fn start_server(
 ) -> Result<()> {
     let tcp_listener = TcpListener::bind(config.service_bind_address).await?;
 
+    let secret_key = StaticSecret::random_from_rng(rand::thread_rng());
     let proxy_state = ProxyState {
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
         password: config.password,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
+        secret_key: Arc::new(Zeroizing::new(secret_key)),
     };
-    let router = Router::new()
-        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
-        .route(EMBEDDINGS_PATH, post(embeddings_handler))
-        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
-        .route(MODELS_PATH, get(models_handler))
-        .route(
-            NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
-            post(node_public_address_registration),
-        )
-        .with_state(proxy_state)
-        .route(HEALTH_PATH, get(health))
-        .merge(openapi_routes());
+    let router = create_router(proxy_state);
     let server =
         axum::serve(tcp_listener, router.into_make_service()).with_graceful_shutdown(async move {
             shutdown_receiver

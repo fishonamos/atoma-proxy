@@ -2490,6 +2490,98 @@ impl AtomaState {
         .await?;
         Ok(())
     }
+
+    /// Updates or inserts a node's public key and associated information in the database.
+    ///
+    /// This method updates the `node_public_keys` table with new information for a specific node. If an entry
+    /// for the node already exists, it updates the existing record. Otherwise, it creates a new record.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - The unique small identifier of the node.
+    /// * `epoch` - The current epoch number when the update occurs.
+    /// * `node_badge_id` - The badge identifier associated with the node.
+    /// * `new_public_key` - The new public key to be stored for the node.
+    /// * `tee_remote_attestation_bytes` - The TEE (Trusted Execution Environment) remote attestation data as bytes.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (`Ok(())`) or failure (`Err(AtomaStateManagerError)`).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute
+    /// - There's a connection issue with the database
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn update_key(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    ///     let node_id = 1;
+    ///     let epoch = 100;
+    ///     let node_badge_id = "badge123".to_string();
+    ///     let new_public_key = "pk_abc123...".to_string();
+    ///     let attestation_bytes = vec![1, 2, 3, 4];
+    ///
+    ///     state_manager.update_node_public_key(
+    ///         node_id,
+    ///         epoch,
+    ///         node_badge_id,
+    ///         new_public_key,
+    ///         attestation_bytes
+    ///     ).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all, fields(%node_id, %epoch))]
+    pub async fn update_node_public_key(
+        &self,
+        node_id: i64,
+        epoch: i64,
+        new_public_key: Vec<u8>,
+        tee_remote_attestation_bytes: Vec<u8>,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes) VALUES ($1, $2, $3, $4)
+                ON CONFLICT (node_small_id)
+                DO UPDATE SET epoch = $2, 
+                              public_key = $3, 
+                              tee_remote_attestation_bytes = $4",
+        )
+        .bind(node_id)
+        .bind(epoch)
+        .bind(new_public_key)
+        .bind(tee_remote_attestation_bytes)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Retrieves the X25519 public key for a selected node.
+    ///
+    /// This method retrieves the X25519 public key for a specific node from the `node_public_keys` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `selected_node_id` - The unique small identifier of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Option<String>>`: A result containing the X25519 public key if found, or None if not found.
+    #[instrument(level = "trace", skip_all, fields(%selected_node_id))]
+    pub async fn get_selected_node_x25519_public_key(
+        &self,
+        selected_node_id: i64,
+    ) -> Result<Option<Vec<u8>>> {
+        let public_key =
+            sqlx::query("SELECT public_key FROM node_public_keys WHERE node_small_id = $1")
+                .bind(selected_node_id)
+                .fetch_optional(&self.db)
+                .await?;
+        Ok(public_key.map(|row| row.get::<Vec<u8>, _>("public_key")))
+    }
 }
 
 #[derive(Error, Debug)]
@@ -2870,6 +2962,59 @@ pub(crate) mod queries {
         Ok(())
     }
 
+    /// Creates the `node_public_keys` table in the database.
+    ///
+    /// This table stores cryptographic and attestation information for nodes in the system.
+    ///
+    /// # Table Structure
+    ///
+    /// - `node_small_id`: BIGINT PRIMARY KEY - The unique identifier for the node
+    /// - `epoch`: BIGINT NOT NULL - The epoch number when the node's key was last updated
+    /// - `node_badge_id`: TEXT NOT NULL - The badge identifier associated with the node
+    /// - `public_key`: BYTEA NOT NULL - The node's public key stored as binary data
+    /// - `tee_remote_attestation_bytes`: BYTEA NOT NULL - The Trusted Execution Environment (TEE) remote attestation data
+    ///
+    /// # Arguments
+    ///
+    /// * `db` - A reference to the Postgres database pool
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the table is created successfully, or an error if the operation fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database connection fails
+    /// - The SQL query execution fails
+    /// - There are insufficient permissions to create the table
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use sqlx::PgPool;
+    /// use atoma_node::atoma_state::queries;
+    ///
+    /// async fn setup_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    ///     queries::create_node_public_keys(pool).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub(crate) async fn create_node_public_keys(db: &PgPool) -> Result<()> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS node_public_keys (
+                node_small_id BIGINT PRIMARY KEY,
+                epoch BIGINT NOT NULL,
+                public_key BYTEA NOT NULL,
+                tee_remote_attestation_bytes BYTEA NOT NULL
+            )",
+        )
+        .execute(db)
+        .await?;
+
+        Ok(())
+    }
+
     /// Creates all the necessary tables in the database.
     ///
     /// This function executes SQL queries to create the following tables:
@@ -2878,6 +3023,10 @@ pub(crate) mod queries {
     /// - stacks
     /// - stack_settlement_tickets
     /// - stack_attestation_disputes
+    /// - node_public_addresses
+    /// - node_throughput_performance
+    /// - node_latency_performance
+    /// - node_public_keys
     ///
     /// # Arguments
     ///
@@ -2915,6 +3064,7 @@ pub(crate) mod queries {
         create_stack_attestation_disputes(db).await?;
         create_nodes_public_addresses(db).await?;
         create_nodes_performance(db).await?;
+        create_node_public_keys(db).await?;
 
         Ok(())
     }

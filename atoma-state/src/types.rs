@@ -279,4 +279,8 @@ pub enum AtomaAtomaStateManagerEvent {
         node_small_id: i64,
         latency: f64,
     },
+    GetSelectedNodeX25519PublicKey {
+        selected_node_id: i64,
+        result_sender: oneshot::Sender<Result<Option<Vec<u8>>>>,
+    },
 }

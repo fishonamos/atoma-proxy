@@ -1,23 +1,24 @@
 use std::time::{Duration, Instant};
 
+use crate::server::middleware::RequestMetadataExtension;
 use crate::server::{http_server::ProxyState, streamer::Streamer};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response, Sse};
+use axum::Extension;
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
-use sui_sdk::types::digests::TransactionDigest;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
-use super::{authenticate_and_process, ProcessedRequest, RequestModel};
+use super::request_model::RequestModel;
 
-pub struct RequestModelChatCompletions {
-    model: String,
-    messages: Vec<Value>,
-    max_tokens: u64,
-}
+/// Path for the confidential chat completions endpoint.
+///
+/// This endpoint follows the OpenAI API format for chat completions, with additional
+/// confidential processing (through AEAD encryption and TEE hardware).
+pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
 
 /// Path for the chat completions endpoint.
 ///
@@ -27,6 +28,21 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
 /// The interval for the keep-alive message in the SSE stream.
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
+
+/// Represents a chat completion request model following the OpenAI API format
+pub struct RequestModelChatCompletions {
+    /// The identifier of the model to use for the completion
+    /// (e.g., "gpt-3.5-turbo", "gpt-4", etc.)
+    model: String,
+
+    /// Array of message objects that represent the conversation history
+    /// Each message should contain a "role" (system/user/assistant) and "content"
+    messages: Vec<Value>,
+
+    /// The maximum number of tokens to generate in the completion
+    /// This limits the length of the model's response
+    max_tokens: u64,
+}
 
 /// OpenAPI documentation for the chat completions endpoint.
 ///
@@ -101,29 +117,29 @@ impl RequestModel for RequestModelChatCompletions {
 
 /// Handles the chat completions request.
 ///
-/// This function handles the chat completions request by processing the payload
-/// and sending the request to the appropriate node for processing.
-/// 1) Check the authentication of the request.
-/// 2) Get the model from the payload.
-/// 3) Get the stacks for the model.
-/// 4) In case no stacks are found, get the tasks for the model and acquire a new stack entry.
-/// 5) Get the public address of the selected node.
-/// 6) Send the OpenAI API request to the selected node.
-/// 7) Return the response from the OpenAI API.
+/// This function processes chat completion requests by determining whether to use streaming
+/// or non-streaming response handling based on the request payload. For streaming requests,
+/// it configures additional options to track token usage.
 ///
 /// # Arguments
 ///
-/// * `state`: The shared state of the application.
-/// * `headers`: The headers of the request.
-/// * `payload`: The payload of the request.
+/// * `metadata`: Extension containing request metadata (node address, ID, compute units, etc.)
+/// * `state`: The shared state of the application
+/// * `headers`: The headers of the request
+/// * `payload`: The JSON payload containing the chat completion request
 ///
 /// # Returns
 ///
-/// Returns the response from the OpenAI API or an error status code.
+/// Returns a Response containing either:
+/// - A streaming SSE connection for real-time completions
+/// - A single JSON response for non-streaming completions
 ///
 /// # Errors
 ///
-/// Returns an error status code if the authentication fails, the model is not found, no tasks are found for the model, no node address is found, or an internal server error occurs.
+/// Returns an error status code if:
+/// - The request processing fails
+/// - The streaming/non-streaming handlers encounter errors
+/// - The underlying inference service returns an error
 #[utoipa::path(
     post,
     path = "",
@@ -140,55 +156,35 @@ impl RequestModel for RequestModelChatCompletions {
     fields(endpoint = CHAT_COMPLETIONS_PATH, payload = ?payload)
 )]
 pub async fn chat_completions_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, StatusCode> {
-    let request_model = RequestModelChatCompletions::new(&payload)?;
-
     let is_streaming = payload
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let mut payload = payload;
-    if is_streaming {
-        payload["stream_options"] = serde_json::json!({
-            "include_usage": true
-        });
-    }
-    let ProcessedRequest {
-        node_address,
-        node_id: selected_node_id,
-        signature,
-        stack_small_id: selected_stack_small_id,
-        headers,
-        num_compute_units: estimated_total_tokens,
-        tx_digest,
-    } = authenticate_and_process(request_model, &state, headers, &payload).await?;
     if is_streaming {
         handle_streaming_response(
             state,
-            node_address,
-            selected_node_id,
-            signature,
-            selected_stack_small_id,
+            metadata.node_address,
+            metadata.node_id,
             headers,
             payload,
-            estimated_total_tokens as i64,
-            tx_digest,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
         )
         .await
     } else {
         handle_non_streaming_response(
             state,
-            node_address,
-            selected_node_id,
-            signature,
-            selected_stack_small_id,
+            metadata.node_address,
+            metadata.node_id,
             headers,
             payload,
-            estimated_total_tokens as i64,
-            tx_digest,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
         )
         .await
     }
@@ -250,30 +246,16 @@ async fn handle_non_streaming_response(
     state: ProxyState,
     node_address: String,
     selected_node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
-    tx_digest: Option<TransactionDigest>,
+    selected_stack_small_id: i64,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id)
-        .header(
-            reqwest::header::CONTENT_LENGTH,
-            payload.to_string().len().to_string(),
-        ); // Set the real length of the payload
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
         .json(&payload)
         .send()
         .await
@@ -393,12 +375,10 @@ async fn handle_streaming_response(
     state: ProxyState,
     node_address: String,
     node_id: i64,
-    signature: String,
-    selected_stack_small_id: i64,
     headers: HeaderMap,
     payload: Value,
     estimated_total_tokens: i64,
-    tx_digest: Option<TransactionDigest>,
+    selected_stack_small_id: i64,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -406,18 +386,9 @@ async fn handle_streaming_response(
 
     let client = reqwest::Client::new();
     let start = Instant::now();
-    let req_builder = client
+    let response = client
         .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
         .headers(headers)
-        .header("X-Signature", signature)
-        .header("X-Stack-Small-Id", selected_stack_small_id);
-    let req_builder = if let Some(tx_digest) = tx_digest {
-        req_builder.header("X-Tx-Digest", tx_digest.base58_encode())
-    } else {
-        req_builder
-    };
-    let response = req_builder
-        .header("Content-Length", payload.to_string().len()) // Set the real length of the payload
         .json(&payload)
         .send()
         .await
