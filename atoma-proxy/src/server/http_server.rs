@@ -6,7 +6,6 @@ use atoma_state::types::AtomaAtomaStateManagerEvent;
 use atoma_utils::verify_signature;
 use axum::body::Body;
 use axum::extract::Request;
-use axum::http::StatusCode;
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::{
@@ -21,7 +20,7 @@ use flume::Sender;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sui_sdk::types::base_types::SuiAddress;
-use sui_sdk::types::crypto::{PublicKey, Signature, SuiSignature};
+use sui_sdk::types::crypto::{PublicKey as SuiPublicKey, Signature, SuiSignature};
 use tokenizers::Tokenizer;
 use tokio::sync::{oneshot, watch};
 use tokio::{net::TcpListener, sync::RwLock};
@@ -339,7 +338,7 @@ pub async fn node_public_address_registration(
 
     let public_key_bytes = signature.public_key_bytes();
     let public_key =
-        PublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
+        SuiPublicKey::try_from_bytes(signature.scheme(), public_key_bytes).map_err(|e| {
             error!("Failed to extract public key from bytes, with error: {e}");
             StatusCode::BAD_REQUEST
         })?;

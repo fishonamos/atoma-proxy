@@ -1,13 +1,9 @@
 use atoma_sui::events::{
-    AtomaEvent, AtomaEvent, NewStackSettlementAttestationEvent, NewStackSettlementAttestationEvent,
-    NodePublicKeyCommittmentEvent, NodeRegisteredEvent, NodeSubscribedToTaskEvent,
-    NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent, NodeSubscriptionUpdatedEvent,
-    NodeUnsubscribedFromTaskEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
-    StackAttestationDisputeEvent, StackCreatedEvent, StackCreatedEvent,
-    StackSettlementTicketClaimedEvent, StackSettlementTicketClaimedEvent,
-    StackSettlementTicketEvent, StackSettlementTicketEvent, StackTrySettleEvent,
-    StackTrySettleEvent, TaskDeprecationEvent, TaskDeprecationEvent, TaskRegisteredEvent,
-    TaskRegisteredEvent,
+    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
+    NodeRegisteredEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent,
+    NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent,
+    StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
+    TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use tracing::{info, instrument, trace};
 
