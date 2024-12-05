@@ -2619,10 +2619,22 @@ impl AtomaState {
         Ok(public_key.map(|row| row.get::<Vec<u8>, _>("public_key")))
     }
 
-    pub async fn insert_new_node(&self, node_small_id: i64, address: String) -> Result<()> {
+    /// Insert new node into the database.
+    ///
+    /// This method inserts a new node into the `nodes` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_small_id` - The unique small identifier of the node.
+    /// * `sui_address` - The sui address of the node.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    pub async fn insert_new_node(&self, node_small_id: i64, sui_address: String) -> Result<()> {
         sqlx::query("INSERT INTO nodes (node_small_id, sui_address) VALUES ($1, $2)")
             .bind(node_small_id)
-            .bind(address)
+            .bind(sui_address)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -3070,7 +3082,7 @@ pub(crate) mod queries {
     /// - stacks
     /// - stack_settlement_tickets
     /// - stack_attestation_disputes
-    /// - node_public_addresses
+    /// - nodes
     /// - node_throughput_performance
     /// - node_latency_performance
     /// - node_public_keys
