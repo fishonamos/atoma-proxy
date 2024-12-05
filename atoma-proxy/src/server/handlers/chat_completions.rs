@@ -153,7 +153,10 @@ impl RequestModel for RequestModelChatCompletions {
 #[instrument(
     level = "info",
     skip_all,
-    fields(endpoint = CHAT_COMPLETIONS_PATH, payload = ?payload)
+    fields(
+        path = metadata.endpoint,
+        payload = ?payload,
+    )
 )]
 pub async fn chat_completions_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
@@ -165,6 +168,7 @@ pub async fn chat_completions_handler(
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+
     if is_streaming {
         handle_streaming_response(
             state,
@@ -174,6 +178,7 @@ pub async fn chat_completions_handler(
             payload,
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
+            metadata.endpoint,
         )
         .await
     } else {
@@ -185,6 +190,7 @@ pub async fn chat_completions_handler(
             payload,
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
+            metadata.endpoint,
         )
         .await
     }
@@ -234,7 +240,7 @@ pub async fn chat_completions_handler(
     level = "info",
     skip_all,
     fields(
-        path = CHAT_COMPLETIONS_PATH,
+        path = endpoint,
         completion_type = "non-streaming",
         stack_small_id,
         estimated_total_tokens,
@@ -250,11 +256,13 @@ async fn handle_non_streaming_response(
     payload: Value,
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
+    endpoint: String,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
+
     let response = client
-        .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
+        .post(format!("{}{}", node_address, endpoint))
         .headers(headers)
         .json(&payload)
         .send()
@@ -363,7 +371,7 @@ async fn handle_non_streaming_response(
     level = "info",
     skip_all,
     fields(
-        path = CHAT_COMPLETIONS_PATH,
+        path = endpoint,
         completion_type = "streaming",
         stack_small_id,
         estimated_total_tokens,
@@ -379,6 +387,7 @@ async fn handle_streaming_response(
     payload: Value,
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
+    endpoint: String,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -387,7 +396,7 @@ async fn handle_streaming_response(
     let client = reqwest::Client::new();
     let start = Instant::now();
     let response = client
-        .post(format!("{}{}", node_address, CHAT_COMPLETIONS_PATH))
+        .post(format!("{}{}", node_address, endpoint))
         .headers(headers)
         .json(&payload)
         .send()
