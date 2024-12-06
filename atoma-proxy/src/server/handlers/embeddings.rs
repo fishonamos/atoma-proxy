@@ -123,7 +123,10 @@ impl RequestModel for RequestModelEmbeddings {
 #[instrument(
     level = "info",
     skip_all,
-    fields(endpoint = EMBEDDINGS_PATH, payload = ?payload)
+    fields(
+        endpoint = metadata.endpoint,
+        payload = ?payload,
+    )
 )]
 pub async fn embeddings_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
@@ -144,6 +147,7 @@ pub async fn embeddings_handler(
         headers,
         payload,
         num_input_compute_units as i64,
+        metadata.endpoint,
     )
     .await
 }
@@ -178,7 +182,7 @@ pub async fn embeddings_handler(
     level = "info",
     skip_all,
     fields(
-        path = EMBEDDINGS_PATH,
+        path = endpoint,
         stack_small_id,
         estimated_total_tokens
     )
@@ -191,12 +195,13 @@ async fn handle_embeddings_response(
     headers: HeaderMap,
     payload: Value,
     num_input_compute_units: i64,
+    endpoint: String,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
     let response = client
-        .post(format!("{}{}", node_address, EMBEDDINGS_PATH))
+        .post(format!("{}{}", node_address, endpoint))
         .headers(headers)
         .json(&payload)
         .send()
