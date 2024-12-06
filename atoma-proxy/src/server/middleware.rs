@@ -1,5 +1,5 @@
 use atoma_state::types::AtomaAtomaStateManagerEvent;
-use atoma_utils::encryption::encrypt_plaintext;
+use atoma_utils::{constants, encryption::encrypt_plaintext};
 use auth::{authenticate_and_process, ProcessedRequest};
 use axum::{
     body::Body,
@@ -29,15 +29,6 @@ use super::{
     },
     http_server::ProxyState,
 };
-
-pub mod constants {
-    pub const STACK_SMALL_ID: &str = "X-Stack-Small-Id";
-    pub const SIGNATURE: &str = "X-Signature";
-    pub const NONCE: &str = "X-Nonce";
-    pub const SALT: &str = "X-Salt";
-    pub const TX_DIGEST: &str = "X-Tx-Digest";
-    pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
-}
 
 /// Maximum size of the body in bytes.
 /// This is to prevent DoS attacks by limiting the size of the request body.
