@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_utils::constants::SIGNATURE;
 use atoma_utils::verify_signature;
 use axum::body::Body;
 use axum::extract::Request;
@@ -65,6 +66,9 @@ pub const NODE_PUBLIC_ADDRESS_REGISTRATION_PATH: &str = "/node/registration";
 
 /// Body size limit for signature verification (contains the body size of the request)
 const MAX_BODY_SIZE: usize = 1024 * 1024; // 1MB
+
+/// Size of the blake2b hash in bytes
+const BODY_HASH_SIZE: usize = 32;
 
 /// Represents the shared state of the application.
 ///
@@ -313,7 +317,7 @@ pub async fn node_public_address_registration(
     request: Request<Body>,
 ) -> Result<Json<Value>, StatusCode> {
     let base64_signature = headers
-        .get("X-Signature")
+        .get(SIGNATURE)
         .ok_or_else(|| {
             error!("Signature header not found");
             StatusCode::BAD_REQUEST
@@ -347,7 +351,7 @@ pub async fn node_public_address_registration(
     let mut blake2b_hash = Blake2b::new();
     blake2b_hash.update(&body_bytes);
     let body_blake2b_hash: GenericArray<u8, U32> = blake2b_hash.finalize();
-    let body_blake2b_hash_bytes: [u8; 32] =
+    let body_blake2b_hash_bytes: [u8; BODY_HASH_SIZE] =
         body_blake2b_hash.as_slice().try_into().map_err(|_| {
             error!("Failed to convert blake2b hash to bytes");
             StatusCode::BAD_REQUEST

@@ -607,6 +607,33 @@ pub(crate) async fn handle_stack_attestation_dispute_event(
     Ok(())
 }
 
+/// Handles node registration event.
+///
+/// This function processes a node registration event by parsing the event data
+/// and inserting the node into the database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
+/// * `event` - A `NodeRegisteredEvent` containing the details of the node registration event.
+/// * `address` - The public address of the node.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `NodeRegisteredEvent`.
+/// * The database operation to insert the node fails.
+///
+/// # Behavior
+///
+/// The function performs the following steps:
+/// 1. Extracts the `node_small_id` from the event.
+/// 2. Calls the `insert_new_node` method on the `AtomaStateManager` to insert the node into the database.
+#[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_node_registration_event(
     state_manager: &AtomaStateManager,
     event: NodeRegisteredEvent,
