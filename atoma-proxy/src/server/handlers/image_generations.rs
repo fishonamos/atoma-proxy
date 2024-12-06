@@ -132,7 +132,10 @@ impl RequestModel for RequestModelImageGenerations {
 #[instrument(
     level = "info",
     skip_all,
-    fields(endpoint = IMAGE_GENERATIONS_PATH, payload = ?payload)
+    fields(
+        endpoint = metadata.endpoint,
+        payload = ?payload,
+    )
 )]
 pub async fn image_generations_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
@@ -147,6 +150,7 @@ pub async fn image_generations_handler(
         headers,
         payload,
         metadata.num_compute_units as i64,
+        metadata.endpoint,
     )
     .await
 }
@@ -184,7 +188,7 @@ pub async fn image_generations_handler(
     level = "info",
     skip_all,
     fields(
-        path = IMAGE_GENERATIONS_PATH,
+        path = endpoint,
         stack_small_id,
         estimated_total_tokens
     )
@@ -197,12 +201,13 @@ async fn handle_image_generation_response(
     headers: HeaderMap,
     payload: Value,
     total_tokens: i64,
+    endpoint: String,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
     // Send the request to the AI node
     let response = client
-        .post(format!("{}{}", node_address, IMAGE_GENERATIONS_PATH))
+        .post(format!("{}{}", node_address, endpoint))
         .headers(headers)
         .json(&payload)
         .send()

@@ -37,6 +37,7 @@ pub mod constants {
     pub const SALT: &str = "X-Salt";
     pub const TX_DIGEST: &str = "X-Tx-Digest";
     pub const NODE_X25519_PUBLIC_KEY: &str = "X-Node-X25519-PublicKey";
+    pub const PROXY_X25519_PUBLIC_KEY: &str = "X-Proxy-X25519-PublicKey";
 }
 
 /// Maximum size of the body in bytes.
@@ -71,6 +72,9 @@ pub struct RequestMetadataExtension {
 
     /// Selected stack small id for this request.
     pub selected_stack_small_id: i64,
+
+    /// The endpoint path for this request.
+    pub endpoint: String,
 }
 
 /// Middleware that handles request authentication, node selection, and request processing setup.
@@ -189,6 +193,7 @@ pub async fn authenticate_middleware(
         node_id,
         num_compute_units,
         selected_stack_small_id: stack_small_id,
+        endpoint: endpoint.clone(),
     });
     utils::handle_confidential_compute_content(state, &mut headers, &endpoint, node_id).await?;
     // update headers
@@ -245,6 +250,20 @@ pub async fn confidential_compute_middleware(
     next: Next,
 ) -> Result<Response, StatusCode> {
     let (mut req_parts, body) = req.into_parts();
+    let body_bytes = axum::body::to_bytes(body, MAX_BODY_SIZE)
+        .await
+        .map_err(|_| {
+            error!("Failed to convert body to bytes");
+            StatusCode::BAD_REQUEST
+        })?;
+    let body_json: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
+        error!("Failed to parse body as JSON: {}", e);
+        StatusCode::BAD_REQUEST
+    })?;
+    let is_streaming = body_json
+        .get("stream")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let x25519_public_key_header = req_parts
         .headers
         .get(constants::NODE_X25519_PUBLIC_KEY)
@@ -270,20 +289,14 @@ pub async fn confidential_compute_middleware(
     let x25519_public_key = PublicKey::from(x25519_public_key_bytes);
     let salt = rand::random::<[u8; SALT_SIZE]>();
     let shared_secret = state.compute_shared_secret(&x25519_public_key);
-    let plaintext = axum::body::to_bytes(body, MAX_BODY_SIZE)
-        .await
-        .map_err(|_| {
-            error!("Request body is too large");
-            StatusCode::BAD_REQUEST
-        })?;
-    let (encrypted_plaintext, nonce) = encrypt_plaintext(&plaintext, shared_secret, &salt)
+
+    let (encrypted_plaintext, nonce) = encrypt_plaintext(&body_bytes, shared_secret, &salt)
         .map_err(|_| {
             error!("Failed to encrypt plaintext");
             StatusCode::BAD_REQUEST
         })?;
     let nonce_str = STANDARD.encode(nonce);
     let salt_str = STANDARD.encode(salt);
-    let x25519_public_key_str = STANDARD.encode(x25519_public_key_bytes);
     let nonce_header = HeaderValue::from_str(&nonce_str).map_err(|e| {
         error!("Invalid nonce header: {}", e);
         StatusCode::BAD_REQUEST
@@ -292,16 +305,30 @@ pub async fn confidential_compute_middleware(
         error!("Invalid salt header: {}", e);
         StatusCode::BAD_REQUEST
     })?;
-    let x25519_public_key_header = HeaderValue::from_str(&x25519_public_key_str).map_err(|e| {
-        error!("Invalid x25519-public-key header: {}", e);
-        StatusCode::BAD_REQUEST
-    })?;
     req_parts.headers.insert(constants::NONCE, nonce_header);
     req_parts.headers.insert(constants::SALT, salt_header);
+    let proxy_x25519_public_key_header =
+        HeaderValue::from_str(&STANDARD.encode(state.public_key().as_bytes())).map_err(|e| {
+            error!("Invalid proxy x25519-public-key header: {}", e);
+            StatusCode::BAD_REQUEST
+        })?;
+    req_parts.headers.insert(
+        constants::PROXY_X25519_PUBLIC_KEY,
+        proxy_x25519_public_key_header,
+    );
+    let body_json = serde_json::json!({
+        "cyphertext": encrypted_plaintext,
+        "stream": is_streaming,
+    });
+    let content_length_header = HeaderValue::from_str(&body_json.to_string().len().to_string())
+        .map_err(|e| {
+            error!("Failed to convert content length to header value: {}", e);
+            StatusCode::BAD_REQUEST
+        })?;
     req_parts
         .headers
-        .insert(constants::NODE_X25519_PUBLIC_KEY, x25519_public_key_header);
-    let req = Request::from_parts(req_parts, Body::from(encrypted_plaintext));
+        .insert(CONTENT_LENGTH, content_length_header);
+    let req = Request::from_parts(req_parts, Body::from(body_json.to_string()));
     Ok(next.run(req).await)
 }
 
