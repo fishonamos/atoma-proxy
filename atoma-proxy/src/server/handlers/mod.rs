@@ -1,7 +1,6 @@
 use atoma_utils::encryption::decrypt_ciphertext;
 use reqwest::StatusCode;
 use serde_json::Value;
-use tokio::sync::oneshot;
 use tracing::{error, info, instrument};
 use x25519_dalek::SharedSecret;
 
@@ -52,6 +51,10 @@ pub(crate) fn extract_node_encryption_metadata(
             })
         })
         .collect::<Result<Vec<u8>, _>>()?;
+    let nonce = nonce.try_into().map_err(|e| {
+        error!("Failed to convert nonce to array, with error: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(NodeEncryptionMetadata { ciphertext, nonce })
 }
 
@@ -71,8 +74,11 @@ pub(crate) fn handle_confidential_compute_decryption_response(
         event = "confidential-compute-decryption-response",
         "Decrypting new response",
     );
-    let (sender, receiver) = oneshot::channel();
-    let plaintext_response_body_bytes = decrypt_ciphertext(shared_secret, ciphertext, salt, nonce);
+    let plaintext_response_body_bytes = decrypt_ciphertext(shared_secret, ciphertext, salt, nonce)
+        .map_err(|e| {
+            error!("Failed to decrypt response: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let response_body = serde_json::from_slice(&plaintext_response_body_bytes).map_err(|_| {
         error!("Failed to parse response body as JSON");
         StatusCode::INTERNAL_SERVER_ERROR

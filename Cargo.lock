@@ -638,7 +638,6 @@ dependencies = [
 [[package]]
 name = "atoma-utils"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#5c5fffb4c34e6cd899c61451728ddf01b2f0e2ff"
 dependencies = [
  "aes-gcm",
  "anyhow",

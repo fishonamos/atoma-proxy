@@ -10,6 +10,7 @@ use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
+use x25519_dalek::PublicKey;
 
 use crate::server::{
     handlers::{extract_node_encryption_metadata, handle_confidential_compute_decryption_response},
@@ -208,8 +209,8 @@ async fn handle_image_generation_response(
     payload: Value,
     total_tokens: i64,
     endpoint: String,
-    salt: [u8; constants::SALT_SIZE],
-    node_x25519_public_key: [u8; constants::X25519_PUBLIC_KEY_BYTES_SIZE],
+    salt: Option<[u8; constants::SALT_SIZE]>,
+    node_x25519_public_key: Option<PublicKey>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
@@ -232,11 +233,13 @@ async fn handle_image_generation_response(
         })
         .map(Json)?;
 
-    let response = if endpoint.contains(CONFIDENTIAL_IMAGE_GENERATIONS_PATH) {
+    let response = if let (Some(node_x25519_public_key), Some(salt)) =
+        (node_x25519_public_key, salt)
+    {
         let shared_secret = state.compute_shared_secret(&node_x25519_public_key);
         let NodeEncryptionMetadata { ciphertext, nonce } =
             extract_node_encryption_metadata(response.0)?;
-        handle_confidential_compute_decryption_response(shared_secret, ciphertext, salt, nonce)?
+        handle_confidential_compute_decryption_response(shared_secret, &ciphertext, &salt, &nonce)?
     } else {
         response.0
     };

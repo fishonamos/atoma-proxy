@@ -88,7 +88,7 @@ pub struct RequestMetadataExtension {
     pub salt: Option<[u8; SALT_SIZE]>,
 
     /// Optional node x25519 public key used for encrypting this this request.
-    pub node_x25519_public_key: Option<[u8; X25519_PUBLIC_KEY_SIZE]>,
+    pub node_x25519_public_key: Option<PublicKey>,
 }
 
 impl RequestMetadataExtension {
@@ -138,10 +138,7 @@ impl RequestMetadataExtension {
     ///     // ... other fields ...
     /// }.with_node_x25519_public_key([0u8; 32]);
     /// ```
-    pub fn with_node_x25519_public_key(
-        mut self,
-        node_x25519_public_key: [u8; X25519_PUBLIC_KEY_SIZE],
-    ) -> Self {
+    pub fn with_node_x25519_public_key(mut self, node_x25519_public_key: PublicKey) -> Self {
         self.node_x25519_public_key = Some(node_x25519_public_key);
         self
     }
@@ -405,7 +402,7 @@ pub async fn confidential_compute_middleware(
         .cloned()
         .unwrap_or_default()
         .with_salt(salt)
-        .with_node_x25519_public_key(x25519_public_key_bytes);
+        .with_node_x25519_public_key(x25519_public_key);
     req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_json.to_string()));
     Ok(next.run(req).await)

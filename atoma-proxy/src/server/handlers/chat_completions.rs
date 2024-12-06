@@ -16,6 +16,7 @@ use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
 use tracing::{error, instrument};
 use utoipa::OpenApi;
+use x25519_dalek::PublicKey;
 
 use super::request_model::RequestModel;
 
@@ -266,8 +267,8 @@ async fn handle_non_streaming_response(
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
     endpoint: String,
-    salt: [u8; constants::SALT_SIZE],
-    node_x25519_public_key: [u8; constants::X25519_PUBLIC_KEY_BYTES_SIZE],
+    salt: Option<[u8; constants::SALT_SIZE]>,
+    node_x25519_public_key: Option<PublicKey>,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
@@ -290,11 +291,13 @@ async fn handle_non_streaming_response(
         })
         .map(Json)?;
 
-    let response = if endpoint.contains(CONFIDENTIAL_CHAT_COMPLETIONS_PATH) {
+    let response = if let (Some(node_x25519_public_key), Some(salt)) =
+        (node_x25519_public_key, salt)
+    {
         let shared_secret = state.compute_shared_secret(&node_x25519_public_key);
         let NodeEncryptionMetadata { ciphertext, nonce } =
             extract_node_encryption_metadata(response.0)?;
-        handle_confidential_compute_decryption_response(shared_secret, ciphertext, salt, nonce)?
+        handle_confidential_compute_decryption_response(shared_secret, &ciphertext, &salt, &nonce)?
     } else {
         response.0
     };
@@ -408,8 +411,8 @@ async fn handle_streaming_response(
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
     endpoint: String,
-    salt: [u8; constants::SALT_SIZE],
-    node_x25519_public_key: [u8; constants::X25519_PUBLIC_KEY_SIZE],
+    salt: Option<[u8; constants::SALT_SIZE]>,
+    node_x25519_public_key: Option<PublicKey>,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
