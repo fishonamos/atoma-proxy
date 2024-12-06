@@ -15,12 +15,16 @@ use tracing::{error, instrument};
 
 /// The chunk that indicates the end of a streaming response
 const DONE_CHUNK: &str = "[DONE]";
+
 /// The prefix for the data chunk
 const DATA_PREFIX: &str = "data: ";
+
 /// The keep-alive chunk
 const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
+
 /// The choices key
 const CHOICES: &str = "choices";
+
 /// The usage key
 const USAGE: &str = "usage";
 

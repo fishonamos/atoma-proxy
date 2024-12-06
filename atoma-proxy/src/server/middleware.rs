@@ -42,11 +42,29 @@ const SALT_SIZE: usize = 16;
 /// Size of the x25519 public key in bytes.
 const X25519_PUBLIC_KEY_SIZE: usize = 32;
 
+/// Metadata containing encryption details for secure node communication.
+///
+/// This struct holds the cryptographic parameters needed for encrypted communication
+/// with inference nodes, specifically the public key for asymmetric encryption and
+/// the nonce for symmetric encryption.
+///
+/// # Security Considerations
+///
+/// - The public key is used in X25519 key exchange to establish a shared secret
+/// - The nonce should be unique for each encryption operation
+/// - Both values are Base64-encoded for safe transmission in HTTP headers
+pub struct NodeEncryptionMetadata {
+    /// Base64-encoded X25519 public key used for key exchange
+    pub ciphertext: Vec<u8>,
+    /// Base64-encoded random nonce used for AES-GCM encryption
+    pub nonce: [u8; constants::NONCE_SIZE],
+}
+
 /// Metadata extension for tracking request-specific information about the selected inference node.
 ///
 /// This extension is attached to requests during authentication middleware processing
 /// and contains essential information about the node that will process the request.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RequestMetadataExtension {
     /// The public address/endpoint of the selected inference node.
     /// This is typically a URL where the request will be forwarded to.
@@ -65,6 +83,68 @@ pub struct RequestMetadataExtension {
 
     /// The endpoint path for this request.
     pub endpoint: String,
+
+    /// Optional salt used for encrypting this this request.
+    pub salt: Option<[u8; SALT_SIZE]>,
+
+    /// Optional node x25519 public key used for encrypting this this request.
+    pub node_x25519_public_key: Option<[u8; X25519_PUBLIC_KEY_SIZE]>,
+}
+
+impl RequestMetadataExtension {
+    /// Adds a salt value to the request metadata.
+    ///
+    /// This method is used in confidential computing scenarios to attach
+    /// a cryptographic salt that will be used for request encryption.
+    ///
+    /// # Arguments
+    ///
+    /// * `salt` - A 16-byte array containing the random salt value
+    ///
+    /// # Returns
+    ///
+    /// Returns self with the salt field populated, enabling method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let metadata = RequestMetadataExtension {
+    ///     // ... other fields ...
+    /// }.with_salt([0u8; 16]);
+    /// ```
+    pub fn with_salt(mut self, salt: [u8; SALT_SIZE]) -> Self {
+        self.salt = Some(salt);
+        self
+    }
+
+    /// Adds an X25519 public key to the request metadata.
+    ///
+    /// This method is used in confidential computing scenarios to attach
+    /// the node's public key that will be used for establishing secure
+    /// end-to-end encrypted communication.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_x25519_public_key` - A 32-byte array containing the node's X25519 public key
+    ///
+    /// # Returns
+    ///
+    /// Returns self with the public key field populated, enabling method chaining
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let metadata = RequestMetadataExtension {
+    ///     // ... other fields ...
+    /// }.with_node_x25519_public_key([0u8; 32]);
+    /// ```
+    pub fn with_node_x25519_public_key(
+        mut self,
+        node_x25519_public_key: [u8; X25519_PUBLIC_KEY_SIZE],
+    ) -> Self {
+        self.node_x25519_public_key = Some(node_x25519_public_key);
+        self
+    }
 }
 
 /// Middleware that handles request authentication, node selection, and request processing setup.
@@ -184,6 +264,7 @@ pub async fn authenticate_middleware(
         num_compute_units,
         selected_stack_small_id: stack_small_id,
         endpoint: endpoint.clone(),
+        ..Default::default()
     });
     utils::handle_confidential_compute_content(state, &mut headers, &endpoint, node_id).await?;
     // update headers
@@ -307,7 +388,7 @@ pub async fn confidential_compute_middleware(
         proxy_x25519_public_key_header,
     );
     let body_json = serde_json::json!({
-        "cyphertext": encrypted_plaintext,
+        "ciphertext": encrypted_plaintext,
         "stream": is_streaming,
     });
     let content_length_header = HeaderValue::from_str(&body_json.to_string().len().to_string())
@@ -318,6 +399,14 @@ pub async fn confidential_compute_middleware(
     req_parts
         .headers
         .insert(CONTENT_LENGTH, content_length_header);
+    let request_metadata = req_parts
+        .extensions
+        .get::<RequestMetadataExtension>()
+        .cloned()
+        .unwrap_or_default()
+        .with_salt(salt)
+        .with_node_x25519_public_key(x25519_public_key_bytes);
+    req_parts.extensions.insert(request_metadata);
     let req = Request::from_parts(req_parts, Body::from(body_json.to_string()));
     Ok(next.run(req).await)
 }

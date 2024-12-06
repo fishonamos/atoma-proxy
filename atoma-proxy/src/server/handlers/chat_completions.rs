@@ -1,8 +1,13 @@
 use std::time::{Duration, Instant};
 
-use crate::server::middleware::RequestMetadataExtension;
-use crate::server::{http_server::ProxyState, streamer::Streamer};
+use crate::server::{
+    handlers::{extract_node_encryption_metadata, handle_confidential_compute_decryption_response},
+    http_server::ProxyState,
+    middleware::{NodeEncryptionMetadata, RequestMetadataExtension},
+    streamer::Streamer,
+};
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_utils::constants;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response, Sse};
@@ -179,6 +184,8 @@ pub async fn chat_completions_handler(
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
             metadata.endpoint,
+            metadata.salt,
+            metadata.node_x25519_public_key,
         )
         .await
     } else {
@@ -191,6 +198,8 @@ pub async fn chat_completions_handler(
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
             metadata.endpoint,
+            metadata.salt,
+            metadata.node_x25519_public_key,
         )
         .await
     }
@@ -257,6 +266,8 @@ async fn handle_non_streaming_response(
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
     endpoint: String,
+    salt: [u8; constants::SALT_SIZE],
+    node_x25519_public_key: [u8; constants::X25519_PUBLIC_KEY_BYTES_SIZE],
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
@@ -278,6 +289,15 @@ async fn handle_non_streaming_response(
             StatusCode::INTERNAL_SERVER_ERROR
         })
         .map(Json)?;
+
+    let response = if endpoint.contains(CONFIDENTIAL_CHAT_COMPLETIONS_PATH) {
+        let shared_secret = state.compute_shared_secret(&node_x25519_public_key);
+        let NodeEncryptionMetadata { ciphertext, nonce } =
+            extract_node_encryption_metadata(response.0)?;
+        handle_confidential_compute_decryption_response(shared_secret, ciphertext, salt, nonce)?
+    } else {
+        response.0
+    };
 
     // Extract the response total number of tokens
     let total_tokens = response
@@ -330,7 +350,7 @@ async fn handle_non_streaming_response(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(response.into_response())
+    Ok(Json(response).into_response())
 }
 
 /// Handles streaming chat completion requests by establishing a Server-Sent Events (SSE) connection.
@@ -388,6 +408,8 @@ async fn handle_streaming_response(
     estimated_total_tokens: i64,
     selected_stack_small_id: i64,
     endpoint: String,
+    salt: [u8; constants::SALT_SIZE],
+    node_x25519_public_key: [u8; constants::X25519_PUBLIC_KEY_SIZE],
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
