@@ -11,6 +11,34 @@ pub mod embeddings;
 pub mod image_generations;
 pub mod request_model;
 
+/// Extracts encryption metadata from a JSON response containing encrypted data.
+///
+/// This function processes a JSON response that contains encrypted data and its associated nonce,
+/// converting them from JSON array representations into byte vectors suitable for cryptographic operations.
+///
+/// # Arguments
+///
+/// * `response` - A JSON Value that must contain two fields:
+///   * `ciphertext`: An array of numbers representing encrypted bytes
+///   * `nonce`: An array of numbers representing the cryptographic nonce
+///
+/// # Returns
+///
+/// * `Ok(NodeEncryptionMetadata)` - A struct containing the extracted ciphertext and nonce as byte vectors
+/// * `Err(StatusCode)` - Returns INTERNAL_SERVER_ERROR (500) if:
+///   * The ciphertext or nonce fields are missing from the response
+///   * The fields are not arrays
+///   * Array values cannot be converted to bytes
+///   * The nonce cannot be converted to the required fixed-size array
+///
+/// # Example JSON Structure
+///
+/// ```json
+/// {
+///     "ciphertext": [1, 2, 3, ...],
+///     "nonce": [4, 5, 6, ...]
+/// }
+/// ```
 #[instrument(
     level = "info",
     skip(response),
@@ -58,6 +86,43 @@ pub(crate) fn extract_node_encryption_metadata(
     Ok(NodeEncryptionMetadata { ciphertext, nonce })
 }
 
+/// Decrypts and deserializes an encrypted response from a confidential compute node.
+///
+/// This function handles the decryption of encrypted response data using the provided shared secret
+/// and cryptographic parameters, then deserializes the decrypted data into a JSON value.
+///
+/// # Arguments
+///
+/// * `shared_secret` - The shared secret key used for decryption, generated from key exchange
+/// * `ciphertext` - The encrypted data as a byte slice
+/// * `salt` - Cryptographic salt used in the encryption process
+/// * `nonce` - Unique cryptographic nonce (number used once) for this encryption
+///
+/// # Returns
+///
+/// * `Ok(Value)` - The decrypted and parsed JSON response
+/// * `Err(StatusCode)` - Returns INTERNAL_SERVER_ERROR (500) if:
+///   * Decryption fails
+///   * The decrypted data cannot be parsed as valid JSON
+///
+/// # Example
+///
+/// ```no_run
+/// use serde_json::Value;
+/// use x25519_dalek::SharedSecret;
+///
+/// let shared_secret = // ... obtained from key exchange
+/// let ciphertext = // ... encrypted response bytes
+/// let salt = // ... salt bytes
+/// let nonce = // ... nonce bytes
+///
+/// let decrypted_response = handle_confidential_compute_decryption_response(
+///     shared_secret,
+///     &ciphertext,
+///     &salt,
+///     &nonce
+/// )?;
+/// ```
 #[instrument(
     level = "info",
     skip_all,
