@@ -139,7 +139,7 @@ pub(crate) fn handle_confidential_compute_decryption_response(
         event = "confidential-compute-decryption-response",
         "Decrypting new response",
     );
-    let plaintext_response_body_bytes = decrypt_ciphertext(shared_secret, ciphertext, salt, nonce)
+    let plaintext_response_body_bytes = decrypt_ciphertext(&shared_secret, ciphertext, salt, nonce)
         .map_err(|e| {
             error!("Failed to decrypt response: {:?}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -149,4 +149,30 @@ pub(crate) fn handle_confidential_compute_decryption_response(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(response_body)
+}
+
+pub(crate) fn handle_confidential_compute_decryption_streaming_chunk(
+    shared_secret: &SharedSecret,
+    ciphertext: &[u8],
+    salt: &[u8],
+    nonce: &[u8],
+) -> Result<String, StatusCode> {
+    info!(
+        target: "atoma-proxy-service",
+        event = "confidential-compute-decryption-response",
+        "Decrypting new response",
+    );
+    let plaintext_response_body_bytes = decrypt_ciphertext(shared_secret, ciphertext, salt, nonce)
+        .map_err(|e| {
+            error!("Failed to decrypt response: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let chunk_str = match std::str::from_utf8(&plaintext_response_body_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Invalid UTF-8 sequence: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    Ok(chunk_str.to_string())
 }

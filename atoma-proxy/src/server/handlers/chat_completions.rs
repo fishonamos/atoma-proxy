@@ -438,6 +438,12 @@ async fn handle_streaming_response(
 
     let stream = response.bytes_stream();
 
+    let shared_secret = if let Some(node_x25519_public_key) = node_x25519_public_key {
+        Some(state.compute_shared_secret(&node_x25519_public_key))
+    } else {
+        None
+    };
+
     // Create the SSE stream
     let stream = Sse::new(Streamer::new(
         stream,
@@ -446,6 +452,8 @@ async fn handle_streaming_response(
         estimated_total_tokens,
         start,
         node_id,
+        shared_secret,
+        salt,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()

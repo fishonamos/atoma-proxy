@@ -358,7 +358,7 @@ pub async fn confidential_compute_middleware(
     let salt = rand::random::<[u8; SALT_SIZE]>();
     let shared_secret = state.compute_shared_secret(&x25519_public_key);
 
-    let (encrypted_plaintext, nonce) = encrypt_plaintext(&body_bytes, shared_secret, &salt)
+    let (encrypted_plaintext, nonce) = encrypt_plaintext(&body_bytes, &shared_secret, &salt)
         .map_err(|_| {
             error!("Failed to encrypt plaintext");
             StatusCode::BAD_REQUEST
