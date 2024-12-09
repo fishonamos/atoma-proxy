@@ -151,12 +151,49 @@ pub(crate) fn handle_confidential_compute_decryption_response(
     Ok(response_body)
 }
 
+/// Decrypts and deserializes an encrypted streaming chunk from a confidential compute node.
+///
+/// This function handles the decryption of encrypted streaming data using the provided shared secret
+/// and cryptographic parameters, then deserializes the decrypted chunk into a JSON value.
+///
+/// # Arguments
+///
+/// * `shared_secret` - A reference to the shared secret key used for decryption
+/// * `ciphertext` - The encrypted chunk data as a byte slice
+/// * `salt` - Cryptographic salt used in the encryption process
+/// * `nonce` - Unique cryptographic nonce (number used once) for this encryption
+///
+/// # Returns
+///
+/// * `Ok(Value)` - The decrypted and parsed JSON chunk
+/// * `Err(StatusCode)` - Returns INTERNAL_SERVER_ERROR (500) if:
+///   * Decryption fails
+///   * The decrypted data cannot be parsed as valid JSON
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use serde_json::Value;
+/// use x25519_dalek::SharedSecret;
+///
+/// let shared_secret = // ... obtained from key exchange
+/// let ciphertext = // ... encrypted chunk bytes
+/// let salt = // ... salt bytes
+/// let nonce = // ... nonce bytes
+///
+/// let decrypted_chunk = handle_confidential_compute_decryption_streaming_chunk(
+///     &shared_secret,
+///     &ciphertext,
+///     &salt,
+///     &nonce
+/// )?;
+/// ```
 pub(crate) fn handle_confidential_compute_decryption_streaming_chunk(
     shared_secret: &SharedSecret,
     ciphertext: &[u8],
     salt: &[u8],
     nonce: &[u8],
-) -> Result<String, StatusCode> {
+) -> Result<Value, StatusCode> {
     info!(
         target: "atoma-proxy-service",
         event = "confidential-compute-decryption-response",
@@ -167,12 +204,9 @@ pub(crate) fn handle_confidential_compute_decryption_streaming_chunk(
             error!("Failed to decrypt response: {:?}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    let chunk_str = match std::str::from_utf8(&plaintext_response_body_bytes) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Invalid UTF-8 sequence: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-    Ok(chunk_str.to_string())
+    let chunk = serde_json::from_slice::<Value>(&plaintext_response_body_bytes).map_err(|e| {
+        error!("Failed to parse response body as JSON: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(chunk)
 }

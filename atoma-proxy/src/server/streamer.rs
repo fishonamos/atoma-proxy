@@ -32,6 +32,9 @@ const CHOICES: &str = "choices";
 /// The usage key
 const USAGE: &str = "usage";
 
+/// The nonce key, for confidential compute mode
+const NONCE: &str = "nonce";
+
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
     /// The stream of bytes currently being processed
@@ -243,19 +246,39 @@ impl Stream for Streamer {
                     return Poll::Pending;
                 }
 
+                let chunk_str = match std::str::from_utf8(&chunk) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("Invalid UTF-8 sequence: {}", e);
+                        return Poll::Ready(Some(Err(Error::new(format!(
+                            "Invalid UTF-8 sequence: {}",
+                            e
+                        )))));
+                    }
+                };
+
+                let chunk_str = chunk_str.strip_prefix(DATA_PREFIX).unwrap_or(chunk_str);
+
+                if chunk_str.starts_with(DONE_CHUNK) {
+                    // This is the last chunk, meaning the inference streaming is complete
+                    self.status = StreamStatus::Completed;
+                    return Poll::Ready(None);
+                }
+
+                let chunk = serde_json::from_slice::<Value>(chunk_str.as_bytes()).map_err(|e| {
+                    error!("Error parsing chunk: {}", e);
+                    Error::new(format!("Error parsing chunk: {}", e))
+                })?;
+
                 let chunk = if let (Some(shared_secret), Some(salt)) =
                     (self.shared_secret.as_ref(), self.salt.as_ref())
                 {
-                    let chunk = serde_json::from_slice::<Value>(&chunk).map_err(|e| {
-                        error!("Error parsing chunk: {}", e);
-                        Error::new(format!("Error parsing chunk: {}", e))
-                    })?;
                     let ciphertext =
                         parse_json_byte_array(&chunk, constants::CIPHERTEXT).map_err(|e| {
                             error!("Error parsing ciphertext from chunk: {}", e);
                             Error::new(format!("Error parsing ciphertext from chunk: {}", e))
                         })?;
-                    let nonce = parse_json_byte_array(&chunk, constants::NONCE).map_err(|e| {
+                    let nonce = parse_json_byte_array(&chunk, NONCE).map_err(|e| {
                         error!("Error parsing nonce from chunk: {}", e);
                         Error::new(format!("Error parsing nonce from chunk: {}", e))
                     })?;
@@ -276,30 +299,9 @@ impl Stream for Streamer {
                         }
                     }
                 } else {
-                    match std::str::from_utf8(&chunk) {
-                        Ok(v) => v.to_string(),
-                        Err(e) => {
-                            error!("Invalid UTF-8 sequence: {}", e);
-                            return Poll::Ready(Some(Err(Error::new(format!(
-                                "Invalid UTF-8 sequence: {}",
-                                e
-                            )))));
-                        }
-                    }
+                    chunk
                 };
 
-                let chunk_str = chunk.strip_prefix(DATA_PREFIX).unwrap_or(&chunk);
-
-                if chunk_str.starts_with(DONE_CHUNK) {
-                    // This is the last chunk, meaning the inference streaming is complete
-                    self.status = StreamStatus::Completed;
-                    return Poll::Ready(None);
-                }
-
-                let chunk = serde_json::from_slice::<Value>(chunk_str.as_bytes()).map_err(|e| {
-                    error!("Error parsing chunk: {}", e);
-                    Error::new(format!("Error parsing chunk: {}", e))
-                })?;
                 let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,
                     None => {

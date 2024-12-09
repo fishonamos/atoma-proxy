@@ -161,7 +161,6 @@ impl RequestModel for RequestModelChatCompletions {
     skip_all,
     fields(
         path = metadata.endpoint,
-        payload = ?payload,
     )
 )]
 pub async fn chat_completions_handler(
@@ -280,13 +279,25 @@ async fn handle_non_streaming_response(
         .send()
         .await
         .map_err(|err| {
-            error!("Failed to send OpenAI API request: {:?}", err);
+            error!(
+                level = "error",
+                node_address = node_address,
+                endpoint = endpoint,
+                error = ?err,
+                "Failed to send OpenAI API request"
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .json::<Value>()
         .await
         .map_err(|err| {
-            error!("Failed to parse OpenAI API response: {:?}", err);
+            error!(
+                level = "error",
+                node_address = node_address,
+                endpoint = endpoint,
+                error = ?err,
+                "Failed to parse OpenAI API response"
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })
         .map(Json)?;
