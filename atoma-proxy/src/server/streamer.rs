@@ -74,6 +74,7 @@ pub enum StreamStatus {
 
 impl Streamer {
     /// Creates a new Streamer instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,

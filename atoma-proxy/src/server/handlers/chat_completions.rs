@@ -449,11 +449,8 @@ async fn handle_streaming_response(
 
     let stream = response.bytes_stream();
 
-    let shared_secret = if let Some(node_x25519_public_key) = node_x25519_public_key {
-        Some(state.compute_shared_secret(&node_x25519_public_key))
-    } else {
-        None
-    };
+    let shared_secret = node_x25519_public_key
+        .map(|node_x25519_public_key| state.compute_shared_secret(&node_x25519_public_key));
 
     // Create the SSE stream
     let stream = Sse::new(Streamer::new(
