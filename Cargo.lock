@@ -562,6 +562,7 @@ dependencies = [
  "rand",
  "serde",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

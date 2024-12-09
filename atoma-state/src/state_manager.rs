@@ -2670,6 +2670,7 @@ impl AtomaState {
     ///    state_manager.get_user_id_by_username_password(username, hashed_password).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_user_id_by_username_password(
         &self,
         username: &str,
@@ -2711,6 +2712,7 @@ impl AtomaState {
     ///   state_manager.is_refresh_token_valid(user_id, refresh_token_hash).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn is_refresh_token_valid(
         &self,
         user_id: i64,
@@ -2754,6 +2756,7 @@ impl AtomaState {
     ///    state_manager.store_refresh_token(user_id, refresh_token_hash).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn store_refresh_token(&self, user_id: i64, refresh_token_hash: &str) -> Result<()> {
         sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash) VALUES ($1, $2)")
             .bind(user_id)
@@ -2790,6 +2793,7 @@ impl AtomaState {
     ///   state_manager.delete_refresh_token(user_id, refresh_token_hash).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn delete_refresh_token(&self, user_id: i64, refresh_token_hash: &str) -> Result<()> {
         sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token_hash = $2")
             .bind(user_id)
@@ -2826,6 +2830,7 @@ impl AtomaState {
     ///    state_manager.delete_api_token(user_id, api_token).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn delete_api_token(&self, user_id: i64, api_token: &str) -> Result<()> {
         sqlx::query("DELETE FROM api_tokens WHERE user_id = $1 AND token = $2")
             .bind(user_id)
@@ -2862,6 +2867,7 @@ impl AtomaState {
     ///    state_manager.is_api_token_valid(user_id, api_token).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn is_api_token_valid(&self, user_id: i64, api_token: &str) -> Result<bool> {
         let is_valid = sqlx::query(
             "SELECT EXISTS(SELECT 1 FROM api_tokens WHERE user_id = $1 AND token = $2)",
@@ -2901,6 +2907,7 @@ impl AtomaState {
     ///    state_manager.store_api_token(user_id, api_token).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn store_api_token(&self, user_id: i64, api_token: &str) -> Result<()> {
         sqlx::query("INSERT INTO api_tokens (user_id, token) VALUES ($1, $2)")
             .bind(user_id)
@@ -2936,6 +2943,7 @@ impl AtomaState {
     ///    state_manager.get_api_tokens_for_user(user_id).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_api_tokens_for_user(&self, user_id: i64) -> Result<Vec<String>> {
         let tokens = sqlx::query("SELECT token FROM api_tokens WHERE user_id = $1")
             .bind(user_id)

@@ -10,6 +10,7 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use tracing::instrument;
 
 use crate::AtomaAuthConfig;
 
@@ -66,6 +67,7 @@ impl Auth {
     /// # Errors
     ///
     /// * If the token generation fails
+    #[instrument(level = "trace", skip(self))]
     fn generate_refresh_token(&self, user_id: i64) -> Result<String> {
         let expiration = Utc::now() + Duration::days(self.refresh_token_lifetime as i64);
         let claims = Claims {
@@ -92,6 +94,7 @@ impl Auth {
     /// # Returns
     ///
     /// * `Result<Claims>` - The claims of the token
+    #[instrument(level = "trace", skip(self))]
     pub fn validate_token(&self, token: &str, is_refresh: bool) -> Result<Claims> {
         let mut validation = Validation::default();
         validation.validate_exp = true; // Enforce expiration validation
@@ -120,6 +123,7 @@ impl Auth {
     /// # Returns
     ///
     /// * `Result<bool>` - If the refresh token is valid
+    #[instrument(level = "trace", skip(self))]
     async fn check_refresh_token_validity(
         &self,
         user_id: i64,
@@ -145,6 +149,7 @@ impl Auth {
     /// # Returns
     ///
     /// * `Result<String>` - The new access token
+    #[instrument(level = "trace", skip(self))]
     pub async fn generate_access_token(&self, refresh_token: &str) -> Result<String> {
         let claims = self.validate_token(refresh_token, true)?;
         let refresh_token_hash = self.hash_string(refresh_token);
@@ -191,6 +196,7 @@ impl Auth {
     /// This method will check if the user password is correct
     /// The password is hashed and compared with the hashed password in the DB
     /// If the password is correct, the method will generate a new refresh and access token
+    #[instrument(level = "info", skip(self, password))]
     pub async fn check_user_password(
         &self,
         username: &str,
@@ -224,6 +230,7 @@ impl Auth {
     /// # Returns
     ///
     /// * `Result<String>` - The generated API token
+    #[instrument(level = "info", skip(self))]
     pub async fn generate_api_token(&self, jwt: &str) -> Result<String> {
         let claims = self.validate_token(jwt, false)?;
         if !self
