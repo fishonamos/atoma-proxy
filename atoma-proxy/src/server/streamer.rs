@@ -5,6 +5,7 @@ use std::{
 };
 
 use atoma_state::types::AtomaAtomaStateManagerEvent;
+use atoma_utils::{constants, parse_json_byte_array};
 use axum::body::Bytes;
 use axum::{response::sse::Event, Error};
 use flume::Sender;
@@ -12,17 +13,27 @@ use futures::Stream;
 use reqwest;
 use serde_json::Value;
 use tracing::{error, instrument};
+use x25519_dalek::SharedSecret;
+
+use super::handlers::handle_confidential_compute_decryption_streaming_chunk;
 
 /// The chunk that indicates the end of a streaming response
 const DONE_CHUNK: &str = "[DONE]";
+
 /// The prefix for the data chunk
 const DATA_PREFIX: &str = "data: ";
+
 /// The keep-alive chunk
 const KEEP_ALIVE_CHUNK: &[u8] = b": keep-alive\n\n";
+
 /// The choices key
 const CHOICES: &str = "choices";
+
 /// The usage key
 const USAGE: &str = "usage";
+
+/// The nonce key, for confidential compute mode
+const NONCE: &str = "nonce";
 
 /// A structure for streaming chat completion chunks.
 pub struct Streamer {
@@ -42,6 +53,10 @@ pub struct Streamer {
     start_decode: Option<Instant>,
     /// Node id that's running this request
     node_id: i64,
+    /// Shared secret for decryption of ciphertext streamed response from the inference node
+    shared_secret: Option<SharedSecret>,
+    /// Salt for decryption of ciphertext streamed response from the inference node
+    salt: Option<[u8; constants::SALT_SIZE]>,
 }
 
 /// Represents the various states of a streaming process
@@ -59,6 +74,7 @@ pub enum StreamStatus {
 
 impl Streamer {
     /// Creates a new Streamer instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stream: impl Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
         state_manager_sender: Sender<AtomaAtomaStateManagerEvent>,
@@ -66,6 +82,8 @@ impl Streamer {
         estimated_total_tokens: i64,
         start: Instant,
         node_id: i64,
+        shared_secret: Option<SharedSecret>,
+        salt: Option<[u8; constants::SALT_SIZE]>,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -76,6 +94,8 @@ impl Streamer {
             start,
             start_decode: None,
             node_id,
+            shared_secret,
+            salt,
         }
     }
 
@@ -226,6 +246,7 @@ impl Stream for Streamer {
                 if chunk.as_ref() == KEEP_ALIVE_CHUNK {
                     return Poll::Pending;
                 }
+
                 let chunk_str = match std::str::from_utf8(&chunk) {
                     Ok(v) => v,
                     Err(e) => {
@@ -249,6 +270,39 @@ impl Stream for Streamer {
                     error!("Error parsing chunk: {}", e);
                     Error::new(format!("Error parsing chunk: {}", e))
                 })?;
+
+                let chunk = if let (Some(shared_secret), Some(salt)) =
+                    (self.shared_secret.as_ref(), self.salt.as_ref())
+                {
+                    let ciphertext =
+                        parse_json_byte_array(&chunk, constants::CIPHERTEXT).map_err(|e| {
+                            error!("Error parsing ciphertext from chunk: {}", e);
+                            Error::new(format!("Error parsing ciphertext from chunk: {}", e))
+                        })?;
+                    let nonce = parse_json_byte_array(&chunk, NONCE).map_err(|e| {
+                        error!("Error parsing nonce from chunk: {}", e);
+                        Error::new(format!("Error parsing nonce from chunk: {}", e))
+                    })?;
+
+                    match handle_confidential_compute_decryption_streaming_chunk(
+                        shared_secret,
+                        &ciphertext,
+                        salt,
+                        &nonce,
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("Error decrypting chunk: {}", e);
+                            return Poll::Ready(Some(Err(Error::new(format!(
+                                "Error decrypting chunk: {}",
+                                e
+                            )))));
+                        }
+                    }
+                } else {
+                    chunk
+                };
+
                 let choices = match chunk.get(CHOICES).and_then(|choices| choices.as_array()) {
                     Some(choices) => choices,
                     None => {
