@@ -3240,7 +3240,7 @@ pub(crate) mod queries {
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub(crate) async fn create_nodes(db: &PgPool) -> Result<()> {
+    async fn create_nodes(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS nodes (
                 node_small_id BIGINT PRIMARY KEY,
@@ -3286,6 +3286,7 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     async fn create_nodes_performance(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_throughput_performance (
@@ -3372,7 +3373,8 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
-    pub(crate) async fn create_node_public_keys(db: &PgPool) -> Result<()> {
+    #[instrument(level = "trace", skip_all)]
+    async fn create_node_public_keys(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS node_public_keys (
                 node_small_id BIGINT PRIMARY KEY,
@@ -3420,6 +3422,7 @@ pub(crate) mod queries {
     ///     queries::create_table_users(pool).await?;
     ///     Ok(())
     /// }
+    #[instrument(level = "trace", skip_all)]
     async fn create_table_users(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS users (
@@ -3468,6 +3471,7 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     async fn create_table_refresh_tokens(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -3517,6 +3521,7 @@ pub(crate) mod queries {
     ///     Ok(())
     /// }
     /// ```
+    #[instrument(level = "trace", skip_all)]
     async fn create_table_api_tokens(db: &PgPool) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS api_tokens (
