@@ -13,8 +13,38 @@ use axum::{
 use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, instrument};
+use utoipa::OpenApi;
+
+use crate::components::openapi::openapi_router;
 
 type Result<T> = std::result::Result<T, StatusCode>;
+
+/// The path for the health check endpoint.
+pub(crate) const HEALTH_PATH: &str = "/health";
+
+/// The path for the subscriptions endpoint.
+pub(crate) const SUBSCRIPTIONS_PATH: &str = "/subscriptions";
+
+/// The path for the tasks endpoint.
+pub(crate) const TASKS_PATH: &str = "/tasks";
+
+/// The path for the get_stacks endpoint.
+pub(crate) const GET_STACKS_PATH: &str = "/get_stacks";
+
+/// The path for the register endpoint.
+pub(crate) const REGISTER_PATH: &str = "/register";
+
+/// The path for the login endpoint.
+pub(crate) const LOGIN_PATH: &str = "/login";
+
+/// The path for the generate_api_token endpoint.
+pub(crate) const GENERATE_API_TOKEN_PATH: &str = "/generate_api_token";
+
+/// The path for the revoke_api_token endpoint.
+pub(crate) const REVOKE_API_TOKEN_PATH: &str = "/revoke_api_token";
+
+/// The path for the api_tokens endpoint.
+pub(crate) const GET_ALL_API_TOKENS_PATH: &str = "/api_tokens";
 
 /// State container for the Atoma proxy service that manages node operations and interactions.
 ///
@@ -163,20 +193,30 @@ pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Ro
         .allow_methods(vec![Method::GET, Method::POST])
         .allow_headers(Any);
     Router::new()
-        .route("/subscriptions", get(get_all_subscriptions))
-        .route("/tasks", get(get_all_tasks))
-        .route("/task/:id", get(get_nodes_for_tasks))
-        .route("/stacks/:id", get(get_node_stacks))
-        .route("/get_stacks", get(get_current_stacks))
-        .route("/register", post(register))
-        .route("/login", post(login))
-        .route("/api_tokens", get(get_all_api_tokens))
-        .route("/generate_api_token", get(generate_api_token))
-        .route("/revoke_api_token", post(revoke_api_token))
+        .route(SUBSCRIPTIONS_PATH, get(get_all_subscriptions))
+        .route(TASKS_PATH, get(get_all_tasks))
+        .route(&format!("{TASKS_PATH}/:id"), get(get_nodes_for_tasks))
+        .route(&format!("{GET_STACKS_PATH}/:id"), get(get_node_stacks))
+        .route(GET_STACKS_PATH, get(get_current_stacks))
+        .route(REGISTER_PATH, post(register))
+        .route(LOGIN_PATH, post(login))
+        .route(GENERATE_API_TOKEN_PATH, get(generate_api_token))
+        .route(REVOKE_API_TOKEN_PATH, post(revoke_api_token))
+        .route(GET_ALL_API_TOKENS_PATH, get(get_all_api_tokens))
         .layer(cors)
         .with_state(proxy_service_state)
-        .route("/health", get(health))
+        .route(HEALTH_PATH, get(health))
+        .merge(openapi_router())
 }
+
+/// OpenAPI documentation for the get_all_api_tokens endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_all_api_tokens
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_all_api_tokens))]
+pub(crate) struct GetAllApiTokensOpenApi;
 
 /// Retrieves all API tokens for the user.
 ///
@@ -197,7 +237,7 @@ pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Ro
     )
 )]
 #[instrument(level = "info", skip_all)]
-async fn get_all_api_tokens(
+pub(crate) async fn get_all_api_tokens(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<String>>> {
@@ -222,6 +262,15 @@ async fn get_all_api_tokens(
     ))
 }
 
+/// OpenAPI documentation for the generate_api_token endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the generate_api_token
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(generate_api_token))]
+pub(crate) struct GenerateApiTokenOpenApi;
+
 /// Generates an API token for the user.
 ///
 /// # Arguments
@@ -242,7 +291,7 @@ async fn get_all_api_tokens(
     )
 )]
 #[instrument(level = "info", skip_all)]
-async fn generate_api_token(
+pub(crate) async fn generate_api_token(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
 ) -> Result<Json<String>> {
@@ -267,6 +316,15 @@ async fn generate_api_token(
     ))
 }
 
+/// OpenAPI documentation for the revoke_api_token endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the revoke_api_token
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(revoke_api_token))]
+pub(crate) struct RevokeApiTokenOpenApi;
+
 /// Revokes an API token for the user.
 ///
 /// # Arguments
@@ -288,7 +346,7 @@ async fn generate_api_token(
     )
 )]
 #[instrument(level = "info", skip_all)]
-async fn revoke_api_token(
+pub(crate) async fn revoke_api_token(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
     body: Json<RevokeApiTokenRequest>,
@@ -313,6 +371,15 @@ async fn revoke_api_token(
     Ok(Json(()))
 }
 
+/// OpenAPI documentation for the register endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the register
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(register))]
+pub(crate) struct RegisterOpenApi;
+
 /// Registers a new user with the proxy service.
 ///
 /// # Arguments
@@ -332,7 +399,7 @@ async fn revoke_api_token(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn register(
+pub(crate) async fn register(
     State(proxy_service_state): State<ProxyServiceState>,
     body: Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>> {
@@ -349,6 +416,15 @@ async fn register(
         refresh_token,
     }))
 }
+
+/// OpenAPI documentation for the login endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the login
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(login))]
+pub(crate) struct LoginOpenApi;
 
 /// Logs in a user with the proxy service.
 ///
@@ -369,7 +445,7 @@ async fn register(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn login(
+pub(crate) async fn login(
     State(proxy_service_state): State<ProxyServiceState>,
     body: Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>> {
@@ -386,6 +462,15 @@ async fn login(
         refresh_token,
     }))
 }
+
+/// OpenAPI documentation for the get_current_stacks endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_current_stacks
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_current_stacks))]
+pub(crate) struct GetCurrentStacksOpenApi;
 
 /// Retrieves all stacks that are not settled.
 ///
@@ -405,7 +490,7 @@ async fn login(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_current_stacks(
+pub(crate) async fn get_current_stacks(
     State(proxy_service_state): State<ProxyServiceState>,
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
@@ -419,6 +504,15 @@ async fn get_current_stacks(
             })?,
     ))
 }
+
+/// OpenAPI documentation for the get_all_subscriptions endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_all_subscriptions
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_all_subscriptions))]
+pub(crate) struct GetAllSubscriptionsOpenApi;
 
 /// Retrieves all subscriptions.
 ///
@@ -451,7 +545,7 @@ async fn get_current_stacks(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_all_subscriptions(
+pub(crate) async fn get_all_subscriptions(
     State(proxy_service_state): State<ProxyServiceState>,
 ) -> Result<Json<Vec<NodeSubscription>>> {
     Ok(Json(
@@ -498,7 +592,7 @@ async fn get_all_subscriptions(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_nodes_for_tasks(
+pub(crate) async fn get_nodes_for_tasks(
     State(proxy_service_state): State<ProxyServiceState>,
     Path(task_id): Path<i64>,
 ) -> Result<Json<Vec<NodeSubscription>>> {
@@ -513,6 +607,16 @@ async fn get_nodes_for_tasks(
             })?,
     ))
 }
+
+/// OpenAPI documentation for the get_all_tasks endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_all_tasks
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_all_tasks))]
+pub(crate) struct GetAllTasksOpenApi;
+
 /// Retrieves all tasks from the state manager.
 ///
 /// # Arguments
@@ -534,7 +638,7 @@ async fn get_nodes_for_tasks(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_all_tasks(
+pub(crate) async fn get_all_tasks(
     State(proxy_service_state): State<ProxyServiceState>,
 ) -> Result<Json<Vec<Task>>> {
     let all_tasks = proxy_service_state
@@ -547,6 +651,15 @@ async fn get_all_tasks(
         })?;
     Ok(Json(all_tasks))
 }
+
+/// OpenAPI documentation for the health endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the health
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(health))]
+pub(crate) struct HealthOpenApi;
 
 /// Health check endpoint for the proxy service.
 ///
@@ -561,7 +674,7 @@ async fn get_all_tasks(
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn health() -> StatusCode {
+pub(crate) async fn health() -> StatusCode {
     StatusCode::OK
 }
 
@@ -587,7 +700,7 @@ async fn health() -> StatusCode {
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_node_stacks(
+pub(crate) async fn get_node_stacks(
     State(proxy_service_state): State<ProxyServiceState>,
     Path(node_small_id): Path<i64>,
 ) -> Result<Json<Vec<Stack>>> {

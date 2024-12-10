@@ -68,6 +68,7 @@ impl Auth {
     /// # Errors
     ///
     /// * If the token generation fails
+    #[instrument(level = "trace", skip(self))]
     async fn generate_refresh_token(&self, user_id: i64) -> Result<String> {
         let expiration = Utc::now() + Duration::days(self.refresh_token_lifetime as i64);
         let claims = Claims {
@@ -201,6 +202,7 @@ impl Auth {
     /// This method will register a new user with a username and password
     /// The password is hashed and stored in the DB
     /// The method will generate a new refresh and access token
+    #[instrument(level = "info", skip(self))]
     pub async fn register(&self, username: &str, password: &str) -> Result<(String, String)> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.state_manager_sender
