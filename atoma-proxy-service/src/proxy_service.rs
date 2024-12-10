@@ -178,6 +178,25 @@ pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Ro
         .route("/health", get(health))
 }
 
+/// Retrieves all API tokens for the user.
+///
+/// # Arguments
+/// * `proxy_service_state` - The shared state containing the state manager
+/// * `headers` - The headers of the request
+///
+/// # Returns
+///
+/// * `Result<Json<Vec<String>>>` - A JSON response containing a list of API tokens
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves all API tokens for the user", body = Value),
+        (status = UNAUTHORIZED, description = "Unauthorized request"),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all api tokens")
+    )
+)]
+#[instrument(level = "info", skip_all)]
 async fn get_all_api_tokens(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
@@ -203,6 +222,26 @@ async fn get_all_api_tokens(
     ))
 }
 
+/// Generates an API token for the user.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+/// * `headers` - The headers of the request
+///
+/// # Returns
+///
+/// * `Result<Json<String>>` - A JSON response containing the generated API token
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Generates an API token for the user", body = Value),
+        (status = UNAUTHORIZED, description = "Unauthorized request"),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to generate api token")
+    )
+)]
+#[instrument(level = "info", skip_all)]
 async fn generate_api_token(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
@@ -228,6 +267,27 @@ async fn generate_api_token(
     ))
 }
 
+/// Revokes an API token for the user.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+/// * `headers` - The headers of the request
+/// * `body` - The request body containing the API token to revoke
+///
+/// # Returns
+///
+/// * `Result<Json<()>>` - A JSON response indicating the success of the operation
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Revokes an API token for the user", body = Value),
+        (status = UNAUTHORIZED, description = "Unauthorized request"),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to revoke api token")
+    )
+)]
+#[instrument(level = "info", skip_all)]
 async fn revoke_api_token(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
@@ -253,6 +313,25 @@ async fn revoke_api_token(
     Ok(Json(()))
 }
 
+/// Registers a new user with the proxy service.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+/// * `body` - The request body containing the username and password of the new user
+///
+/// # Returns
+///
+/// * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Registers a new user", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to register user")
+    )
+)]
+#[instrument(level = "trace", skip_all)]
 async fn register(
     State(proxy_service_state): State<ProxyServiceState>,
     body: Json<AuthRequest>,
@@ -271,6 +350,25 @@ async fn register(
     }))
 }
 
+/// Logs in a user with the proxy service.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+/// * `body` - The request body containing the username and password of the user
+///
+/// # Returns
+///
+/// * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Logs in a user", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to login user")
+    )
+)]
+#[instrument(level = "trace", skip_all)]
 async fn login(
     State(proxy_service_state): State<ProxyServiceState>,
     body: Json<AuthRequest>,

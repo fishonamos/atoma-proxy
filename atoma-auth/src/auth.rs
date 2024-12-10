@@ -283,6 +283,19 @@ impl Auth {
         Ok(api_token)
     }
 
+    /// Revoke an API token
+    /// This method will revoke an API token for the user
+    /// The method will check if the access token and its corresponding refresh token is valid and revoke the API token in the state manager
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt` - The access token to be used to revoke the API token
+    /// * `api_token` - The API token to be revoked
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - If the API token was revoked
+    #[instrument(level = "info", skip(self))]
     pub async fn revoke_api_token(&self, jwt: &str, api_token: &str) -> Result<()> {
         let claims = self.validate_token(jwt, false)?;
         if !self
@@ -304,6 +317,18 @@ impl Auth {
         Ok(())
     }
 
+    /// Get all API tokens for a user
+    /// This method will get all API tokens for a user
+    /// The method will check if the access token and its corresponding refresh token is valid
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt` - The access token to be used to get the API tokens
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>>` - The list of API tokens
+    #[instrument(level = "info", skip(self))]
     pub async fn get_all_api_tokens(&self, jwt: &str) -> Result<Vec<String>> {
         let claims = self.validate_token(jwt, false)?;
         if !self

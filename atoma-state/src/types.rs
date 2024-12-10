@@ -4,15 +4,16 @@ use atoma_sui::events::{
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::sync::oneshot;
+use utoipa::ToSchema;
 
 use crate::state_manager::Result;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct RevokeApiTokenRequest {
     pub api_token: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct AuthRequest {
     pub username: String,
     pub password: String,
