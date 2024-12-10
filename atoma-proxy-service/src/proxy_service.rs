@@ -118,40 +118,7 @@ pub async fn run_proxy_service(
 ///
 /// # Returns
 /// * `Router` - A configured axum Router instance with all API routes and shared state
-///
-/// # API Endpoints
-///
-/// ## Subscription Management
-/// * `GET /subscriptions` - Get all subscriptions for registered nodes
-/// * `GET /subscriptions/:id` - Get subscriptions for a specific node
-/// * `POST /model_subscribe` - Subscribe a node to a model
-/// * `POST /task_subscribe` - Subscribe a node to a task
-/// * `POST /task_update_subscription` - Updates an already existing subscription to a task
-/// * `POST /task_unsubscribe` - Unsubscribe a node from a task
-///
-/// ## Task Management
-/// * `GET /tasks` - Get all available tasks
-///
-/// ## Stack Operations
-/// * `GET /stacks` - Get all stacks for registered nodes
-/// * `GET /stacks/:id` - Get stacks for a specific node
-/// * `GET /almost_filled_stacks/:fraction` - Get stacks filled above specified fraction
-/// * `GET /almost_filled_stacks/:id/:fraction` - Get node's stacks filled above fraction
-/// * `GET /claimed_stacks` - Get all claimed stacks
-/// * `GET /claimed_stacks/:id` - Get claimed stacks for a specific node
-/// * `POST /try_settle_stack_ids` - Attempt to settle specified stacks
-/// * `POST /submit_stack_settlement_attestations` - Submit attestations for stack settlement
-/// * `POST /claim_funds` - Claim funds from completed stacks
-///
-/// ## Attestation Disputes
-/// * `GET /against_attestation_disputes` - Get disputes against registered nodes
-/// * `GET /against_attestation_disputes/:id` - Get disputes against a specific node
-/// * `GET /own_attestation_disputes` - Get disputes initiated by registered nodes
-/// * `GET /own_attestation_disputes/:id` - Get disputes initiated by a specific node
-///
-/// ## Node Registration
-/// * `POST /register` - Register a new node
-///
+/// 
 /// # Example
 /// ```rust,ignore
 /// use atoma_proxy_service::ProxyServiceState;
