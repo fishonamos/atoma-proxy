@@ -52,25 +52,6 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to generate api token
-  /get_stacks:
-    get:
-      tags:
-      - Stacks
-      summary: Retrieves all stacks that are not settled.
-      description: |-
-        # Arguments
-        * `proxy_service_state` - The shared state containing the state manager
-
-        # Returns
-        * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
-          - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
-          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
-      operationId: get_current_stacks
-      responses:
-        '200':
-          description: Retrieves all stacks that are not settled
-        '500':
-          description: Failed to get all stacks
   /health:
     get:
       tags:
@@ -178,6 +159,25 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to revoke api token
+  /stacks:
+    get:
+      tags:
+      - Stacks
+      summary: Retrieves all stacks that are not settled.
+      description: |-
+        # Arguments
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+        * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
+          - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
+      operationId: get_current_stacks
+      responses:
+        '200':
+          description: Retrieves all stacks that are not settled
+        '500':
+          description: Failed to get all stacks
   /subscriptions:
     get:
       tags:
