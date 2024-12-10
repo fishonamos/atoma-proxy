@@ -118,7 +118,7 @@ pub async fn run_proxy_service(
 ///
 /// # Returns
 /// * `Router` - A configured axum Router instance with all API routes and shared state
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// use atoma_proxy_service::ProxyServiceState;
