@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: atoma-proxy-service
+  description: ''
+  license:
+    name: Apache-2.0
+  version: 0.1.0
+servers:
+- url: http://localhost:3005
+  description: Local server
+paths:
+  /api_tokens:
+    get:
+      tags:
+      - Auth
+      summary: Retrieves all API tokens for the user.
+      description: |-
+        # Arguments
+        * `proxy_service_state` - The shared state containing the state manager
+        * `headers` - The headers of the request
+
+        # Returns
+
+        * `Result<Json<Vec<String>>>` - A JSON response containing a list of API tokens
+      operationId: get_all_api_tokens
+      responses:
+        '200':
+          description: Retrieves all API tokens for the user
+        '401':
+          description: Unauthorized request
+        '500':
+          description: Failed to get all api tokens
+  /generate_api_token:
+    get:
+      tags:
+      - Auth
+      summary: Generates an API token for the user.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `headers` - The headers of the request
+
+        # Returns
+
+        * `Result<Json<String>>` - A JSON response containing the generated API token
+      operationId: generate_api_token
+      responses:
+        '200':
+          description: Generates an API token for the user
+        '401':
+          description: Unauthorized request
+        '500':
+          description: Failed to generate api token
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health check endpoint for the proxy service.
+      description: |-
+        # Returns
+        * `StatusCode::OK` - Always returns OK
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+        '500':
+          description: Service is unhealthy
+  /login:
+    post:
+      tags:
+      - Auth
+      summary: Logs in a user with the proxy service.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `body` - The request body containing the username and password of the user
+
+        # Returns
+
+        * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+        required: true
+      responses:
+        '200':
+          description: Logs in a user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthRequest'
+        '500':
+          description: Failed to login user
+  /register:
+    post:
+      tags:
+      - Auth
+      summary: Registers a new user with the proxy service.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `body` - The request body containing the username and password of the new user
+
+        # Returns
+
+        * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+        required: true
+      responses:
+        '200':
+          description: Registers a new user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthRequest'
+        '500':
+          description: Failed to register user
+  /revoke_api_token:
+    post:
+      tags:
+      - Auth
+      summary: Revokes an API token for the user.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `headers` - The headers of the request
+        * `body` - The request body containing the API token to revoke
+
+        # Returns
+
+        * `Result<Json<()>>` - A JSON response indicating the success of the operation
+      operationId: revoke_api_token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeApiTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Revokes an API token for the user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeApiTokenRequest'
+        '401':
+          description: Unauthorized request
+        '500':
+          description: Failed to revoke api token
+  /stacks:
+    get:
+      tags:
+      - Stacks
+      summary: Retrieves all stacks that are not settled.
+      description: |-
+        # Arguments
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+        * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
+          - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
+      operationId: get_current_stacks
+      responses:
+        '200':
+          description: Retrieves all stacks that are not settled
+        '500':
+          description: Failed to get all stacks
+  /subscriptions:
+    get:
+      tags:
+      - Subscriptions
+      summary: Retrieves all subscriptions.
+      description: |-
+        # Arguments
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+        * `Result<Json<Vec<NodeSubscription>>>` - A JSON response containing a list of subscriptions
+          - `Ok(Json<Vec<NodeSubscription>>)` - Successfully retrieved subscriptions
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve subscriptions from state manager
+
+        # Example Response
+        Returns a JSON array of NodeSubscription objects, which may include:
+        ```json
+        [
+            {
+                "node_small_id": 123,
+                "model_name": "example_model",
+                "echelon_id": 1,
+                "subscription_time": "2024-03-21T12:00:00Z"
+            }
+        ]
+        ```
+      operationId: get_all_subscriptions
+      responses:
+        '200':
+          description: Retrieves all subscriptions for all nodes
+        '500':
+          description: Failed to get nodes subscriptions
+  /tasks:
+    get:
+      tags:
+      - Tasks
+      summary: Retrieves all tasks from the state manager.
+      description: |-
+        # Arguments
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+        * `Result<Json<Vec<Task>>>` - A JSON response containing a list of tasks
+          - `Ok(Json<Vec<Task>>)` - Successfully retrieved tasks
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve tasks from state manager
+
+        # Example Response
+        Returns a JSON array of Task objects representing all tasks in the system
+      operationId: get_all_tasks
+      responses:
+        '200':
+          description: Retrieves all tasks
+        '500':
+          description: Failed to get all tasks
+components:
+  schemas:
+    AuthRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        password:
+          type: string
+        username:
+          type: string
+    RevokeApiTokenRequest:
+      type: object
+      required:
+      - api_token
+      properties:
+        api_token:
+          type: string
+tags:
+- name: health
+  description: Health check endpoints
+- name: generate_api_token
+  description: Authentication and API token management
+- name: revoke_api_token
+  description: Authentication and API token management
+- name: register
+  description: Authentication and API token management
+- name: login
+  description: Authentication and API token management
+- name: get_all_api_tokens
+  description: Authentication and API token management
+- name: get_stacks
+  description: Stack operations
+- name: get_tasks
+  description: Task management
+- name: get_subscriptions
+  description: Node subscription management

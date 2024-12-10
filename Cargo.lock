@@ -615,11 +615,13 @@ dependencies = [
  "axum",
  "config",
  "serde",
+ "serde_yaml 0.9.34+deprecated",
  "tokio",
  "tower-http 0.6.2",
  "tracing",
  "tracing-subscriber",
  "utoipa",
+ "utoipa-swagger-ui",
 ]
 
 [[package]]

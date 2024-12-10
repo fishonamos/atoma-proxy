@@ -1,20 +1,26 @@
 use atoma_auth::Auth;
-use atoma_state::{
-    types::{AuthRequest, AuthResponse, NodeSubscription, RevokeApiTokenRequest, Stack, Task},
-    AtomaState,
-};
+use atoma_state::AtomaState;
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, Method, StatusCode},
-    routing::{get, post},
-    Json, Router,
+    http::{Method, StatusCode},
+    routing::get,
+    Router,
 };
 
 use tokio::{net::TcpListener, sync::watch::Receiver};
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{error, instrument};
+use tracing::instrument;
+use utoipa::OpenApi;
 
-type Result<T> = std::result::Result<T, StatusCode>;
+use crate::{
+    components::openapi::openapi_router,
+    handlers::{
+        auth::auth_router, stacks::stacks_router, subscriptions::subscriptions_router,
+        tasks::tasks_router,
+    },
+};
+
+/// The path for the health check endpoint.
+pub(crate) const HEALTH_PATH: &str = "/health";
 
 /// State container for the Atoma proxy service that manages node operations and interactions.
 ///
@@ -113,39 +119,6 @@ pub async fn run_proxy_service(
 /// # Returns
 /// * `Router` - A configured axum Router instance with all API routes and shared state
 ///
-/// # API Endpoints
-///
-/// ## Subscription Management
-/// * `GET /subscriptions` - Get all subscriptions for registered nodes
-/// * `GET /subscriptions/:id` - Get subscriptions for a specific node
-/// * `POST /model_subscribe` - Subscribe a node to a model
-/// * `POST /task_subscribe` - Subscribe a node to a task
-/// * `POST /task_update_subscription` - Updates an already existing subscription to a task
-/// * `POST /task_unsubscribe` - Unsubscribe a node from a task
-///
-/// ## Task Management
-/// * `GET /tasks` - Get all available tasks
-///
-/// ## Stack Operations
-/// * `GET /stacks` - Get all stacks for registered nodes
-/// * `GET /stacks/:id` - Get stacks for a specific node
-/// * `GET /almost_filled_stacks/:fraction` - Get stacks filled above specified fraction
-/// * `GET /almost_filled_stacks/:id/:fraction` - Get node's stacks filled above fraction
-/// * `GET /claimed_stacks` - Get all claimed stacks
-/// * `GET /claimed_stacks/:id` - Get claimed stacks for a specific node
-/// * `POST /try_settle_stack_ids` - Attempt to settle specified stacks
-/// * `POST /submit_stack_settlement_attestations` - Submit attestations for stack settlement
-/// * `POST /claim_funds` - Claim funds from completed stacks
-///
-/// ## Attestation Disputes
-/// * `GET /against_attestation_disputes` - Get disputes against registered nodes
-/// * `GET /against_attestation_disputes/:id` - Get disputes against a specific node
-/// * `GET /own_attestation_disputes` - Get disputes initiated by registered nodes
-/// * `GET /own_attestation_disputes/:id` - Get disputes initiated by a specific node
-///
-/// ## Node Registration
-/// * `POST /register` - Register a new node
-///
 /// # Example
 /// ```rust,ignore
 /// use atoma_proxy_service::ProxyServiceState;
@@ -163,390 +136,24 @@ pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Ro
         .allow_methods(vec![Method::GET, Method::POST])
         .allow_headers(Any);
     Router::new()
-        .route("/subscriptions", get(get_all_subscriptions))
-        .route("/tasks", get(get_all_tasks))
-        .route("/task/:id", get(get_nodes_for_tasks))
-        .route("/stacks/:id", get(get_node_stacks))
-        .route("/get_stacks", get(get_current_stacks))
-        .route("/register", post(register))
-        .route("/login", post(login))
-        .route("/api_tokens", get(get_all_api_tokens))
-        .route("/generate_api_token", get(generate_api_token))
-        .route("/revoke_api_token", post(revoke_api_token))
+        .merge(auth_router())
+        .merge(stacks_router())
+        .merge(subscriptions_router())
+        .merge(tasks_router())
         .layer(cors)
         .with_state(proxy_service_state)
-        .route("/health", get(health))
+        .route(HEALTH_PATH, get(health))
+        .merge(openapi_router())
 }
 
-/// Retrieves all API tokens for the user.
+/// OpenAPI documentation for the health endpoint.
 ///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `headers` - The headers of the request
-///
-/// # Returns
-///
-/// * `Result<Json<Vec<String>>>` - A JSON response containing a list of API tokens
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all API tokens for the user", body = Value),
-        (status = UNAUTHORIZED, description = "Unauthorized request"),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all api tokens")
-    )
-)]
-#[instrument(level = "info", skip_all)]
-async fn get_all_api_tokens(
-    State(proxy_service_state): State<ProxyServiceState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<String>>> {
-    let auth_header = headers
-        .get("Authorization")
-        .ok_or(StatusCode::UNAUTHORIZED)?
-        .to_str()
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    let jwt = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    Ok(Json(
-        proxy_service_state
-            .auth
-            .get_all_api_tokens(jwt)
-            .await
-            .map_err(|e| {
-                error!("Failed to get all api tokens: {:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
-
-/// Generates an API token for the user.
-///
-/// # Arguments
-///
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `headers` - The headers of the request
-///
-/// # Returns
-///
-/// * `Result<Json<String>>` - A JSON response containing the generated API token
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Generates an API token for the user", body = Value),
-        (status = UNAUTHORIZED, description = "Unauthorized request"),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to generate api token")
-    )
-)]
-#[instrument(level = "info", skip_all)]
-async fn generate_api_token(
-    State(proxy_service_state): State<ProxyServiceState>,
-    headers: HeaderMap,
-) -> Result<Json<String>> {
-    let auth_header = headers
-        .get("Authorization")
-        .ok_or(StatusCode::UNAUTHORIZED)?
-        .to_str()
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    let jwt = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    Ok(Json(
-        proxy_service_state
-            .auth
-            .generate_api_token(jwt)
-            .await
-            .map_err(|e| {
-                error!("Failed to generate api token: {:?}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
-
-/// Revokes an API token for the user.
-///
-/// # Arguments
-///
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `headers` - The headers of the request
-/// * `body` - The request body containing the API token to revoke
-///
-/// # Returns
-///
-/// * `Result<Json<()>>` - A JSON response indicating the success of the operation
-#[utoipa::path(
-    post,
-    path = "",
-    responses(
-        (status = OK, description = "Revokes an API token for the user", body = Value),
-        (status = UNAUTHORIZED, description = "Unauthorized request"),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to revoke api token")
-    )
-)]
-#[instrument(level = "info", skip_all)]
-async fn revoke_api_token(
-    State(proxy_service_state): State<ProxyServiceState>,
-    headers: HeaderMap,
-    body: Json<RevokeApiTokenRequest>,
-) -> Result<Json<()>> {
-    let auth_header = headers
-        .get("Authorization")
-        .ok_or(StatusCode::UNAUTHORIZED)?
-        .to_str()
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    let jwt = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    proxy_service_state
-        .auth
-        .revoke_api_token(jwt, &body.api_token)
-        .await
-        .map_err(|e| {
-            error!("Failed to revoke api token: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    Ok(Json(()))
-}
-
-/// Registers a new user with the proxy service.
-///
-/// # Arguments
-///
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `body` - The request body containing the username and password of the new user
-///
-/// # Returns
-///
-/// * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
-#[utoipa::path(
-    post,
-    path = "",
-    responses(
-        (status = OK, description = "Registers a new user", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to register user")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn register(
-    State(proxy_service_state): State<ProxyServiceState>,
-    body: Json<AuthRequest>,
-) -> Result<Json<AuthResponse>> {
-    let (refresh_token, access_token) = proxy_service_state
-        .auth
-        .register(&body.username, &body.password)
-        .await
-        .map_err(|e| {
-            error!("Failed to register user: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    Ok(Json(AuthResponse {
-        access_token,
-        refresh_token,
-    }))
-}
-
-/// Logs in a user with the proxy service.
-///
-/// # Arguments
-///
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `body` - The request body containing the username and password of the user
-///
-/// # Returns
-///
-/// * `Result<Json<AuthResponse>>` - A JSON response containing the access and refresh tokens
-#[utoipa::path(
-    post,
-    path = "",
-    responses(
-        (status = OK, description = "Logs in a user", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to login user")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn login(
-    State(proxy_service_state): State<ProxyServiceState>,
-    body: Json<AuthRequest>,
-) -> Result<Json<AuthResponse>> {
-    let (refresh_token, access_token) = proxy_service_state
-        .auth
-        .check_user_password(&body.username, &body.password)
-        .await
-        .map_err(|e| {
-            error!("Failed to register user: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    Ok(Json(AuthResponse {
-        access_token,
-        refresh_token,
-    }))
-}
-
-/// Retrieves all stacks that are not settled.
-///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-///
-/// # Returns
-/// * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
-///   - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
-///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all stacks that are not settled", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all stacks")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn get_current_stacks(
-    State(proxy_service_state): State<ProxyServiceState>,
-) -> Result<Json<Vec<Stack>>> {
-    Ok(Json(
-        proxy_service_state
-            .atoma_state
-            .get_current_stacks()
-            .await
-            .map_err(|_| {
-                error!("Failed to get all stacks");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
-
-/// Retrieves all subscriptions.
-///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-///
-/// # Returns
-/// * `Result<Json<Vec<NodeSubscription>>>` - A JSON response containing a list of subscriptions
-///   - `Ok(Json<Vec<NodeSubscription>>)` - Successfully retrieved subscriptions
-///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve subscriptions from state manager
-///
-/// # Example Response
-/// Returns a JSON array of NodeSubscription objects, which may include:
-/// ```json
-/// [
-///     {
-///         "node_small_id": 123,
-///         "model_name": "example_model",
-///         "echelon_id": 1,
-///         "subscription_time": "2024-03-21T12:00:00Z"
-///     }
-/// ]
-/// ```
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all subscriptions for all nodes", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get nodes subscriptions")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn get_all_subscriptions(
-    State(proxy_service_state): State<ProxyServiceState>,
-) -> Result<Json<Vec<NodeSubscription>>> {
-    Ok(Json(
-        proxy_service_state
-            .atoma_state
-            .get_all_node_subscriptions()
-            .await
-            .map_err(|_| {
-                error!("Failed to get nodes subscriptions");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
-
-/// Retrieves all subscriptions for a specific task identified by its task_id.
-///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `task_id` - The ID of the task whose subscriptions should be retrieved
-///
-/// # Returns
-/// * `Result<Json<Vec<NodeSubscription>>` - A JSON response containing a list of subscriptions
-///   - `Ok(Json<Vec<NodeSubscription>>)` - Successfully retrieved subscriptions
-///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve subscriptions from state manager
-///
-/// # Example Response
-/// Returns a JSON array of NodeSubscription objects for the specified task, which may include:
-/// ```json
-/// [
-///    {
-///       "node_small_id": 123,
-///       "model_name": "example_model",
-///       "echelon_id": 1,
-///       "subscription_time": "2024-03-21T12:00:00Z"
-/// }
-/// ]
-/// ```
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all subscriptions for a specific task", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get node subscriptions")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn get_nodes_for_tasks(
-    State(proxy_service_state): State<ProxyServiceState>,
-    Path(task_id): Path<i64>,
-) -> Result<Json<Vec<NodeSubscription>>> {
-    Ok(Json(
-        proxy_service_state
-            .atoma_state
-            .get_all_node_subscriptions_for_task(task_id)
-            .await
-            .map_err(|_| {
-                error!("Failed to get node subscriptions");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
-}
-/// Retrieves all tasks from the state manager.
-///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-///
-/// # Returns
-/// * `Result<Json<Vec<Task>>>` - A JSON response containing a list of tasks
-///   - `Ok(Json<Vec<Task>>)` - Successfully retrieved tasks
-///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve tasks from state manager
-///
-/// # Example Response
-/// Returns a JSON array of Task objects representing all tasks in the system
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all tasks", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get all tasks")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn get_all_tasks(
-    State(proxy_service_state): State<ProxyServiceState>,
-) -> Result<Json<Vec<Task>>> {
-    let all_tasks = proxy_service_state
-        .atoma_state
-        .get_all_tasks()
-        .await
-        .map_err(|_| {
-            error!("Failed to get all tasks");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    Ok(Json(all_tasks))
-}
+/// This struct is used to generate OpenAPI documentation for the health
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(health))]
+pub(crate) struct HealthOpenApi;
 
 /// Health check endpoint for the proxy service.
 ///
@@ -556,49 +163,11 @@ async fn get_all_tasks(
     get,
     path = "",
     responses(
-        (status = OK, description = "Service is healthy", body = Value),
+        (status = OK, description = "Service is healthy"),
         (status = INTERNAL_SERVER_ERROR, description = "Service is unhealthy")
     )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn health() -> StatusCode {
+pub(crate) async fn health() -> StatusCode {
     StatusCode::OK
-}
-
-/// Retrieves all stacks for a specific node identified by its small ID.
-///
-/// # Arguments
-/// * `proxy_service_state` - The shared state containing the state manager
-/// * `node_small_id` - The small ID of the node whose stacks should be retrieved
-///
-/// # Returns
-/// * `Result<Json<Vec<Stack>>>` - A JSON response containing a list of stacks
-///   - `Ok(Json<Vec<Stack>>)` - Successfully retrieved stacks
-///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve stacks from state manager
-///
-/// # Example Response
-/// Returns a JSON array of Stack objects for the specified node
-#[utoipa::path(
-    get,
-    path = "",
-    responses(
-        (status = OK, description = "Retrieves all stacks for a specific node", body = Value),
-        (status = INTERNAL_SERVER_ERROR, description = "Failed to get node stack")
-    )
-)]
-#[instrument(level = "trace", skip_all)]
-async fn get_node_stacks(
-    State(proxy_service_state): State<ProxyServiceState>,
-    Path(node_small_id): Path<i64>,
-) -> Result<Json<Vec<Stack>>> {
-    Ok(Json(
-        proxy_service_state
-            .atoma_state
-            .get_stack_by_id(node_small_id)
-            .await
-            .map_err(|_| {
-                error!("Failed to get node stack");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?,
-    ))
 }
