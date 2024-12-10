@@ -3,13 +3,17 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    proxy_service::{
-        GenerateApiTokenOpenApi, GetAllApiTokensOpenApi, GetAllSubscriptionsOpenApi,
-        GetAllTasksOpenApi, HealthOpenApi, LoginOpenApi, RegisterOpenApi, RevokeApiTokenOpenApi,
-        GENERATE_API_TOKEN_PATH, GET_ALL_API_TOKENS_PATH, GET_STACKS_PATH, HEALTH_PATH, LOGIN_PATH,
-        REGISTER_PATH, REVOKE_API_TOKEN_PATH, SUBSCRIPTIONS_PATH, TASKS_PATH,
+    handlers::{
+        auth::{
+            GenerateApiTokenOpenApi, GetAllApiTokensOpenApi, LoginOpenApi, RegisterOpenApi,
+            RevokeApiTokenOpenApi, GENERATE_API_TOKEN_PATH, GET_ALL_API_TOKENS_PATH, LOGIN_PATH,
+            REGISTER_PATH, REVOKE_API_TOKEN_PATH,
+        },
+        stacks::{GetCurrentStacksOpenApi, GET_STACKS_PATH},
+        subscriptions::{GetAllSubscriptionsOpenApi, SUBSCRIPTIONS_PATH},
+        tasks::{GetAllTasksOpenApi, TASKS_PATH},
     },
-    GetCurrentStacksOpenApi,
+    HealthOpenApi, HEALTH_PATH,
 };
 
 pub fn openapi_router() -> Router {

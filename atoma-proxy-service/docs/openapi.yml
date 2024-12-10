@@ -26,9 +26,6 @@ paths:
       responses:
         '200':
           description: Retrieves all API tokens for the user
-          content:
-            application/json:
-              schema: {}
         '401':
           description: Unauthorized request
         '500':
@@ -51,9 +48,6 @@ paths:
       responses:
         '200':
           description: Generates an API token for the user
-          content:
-            application/json:
-              schema: {}
         '401':
           description: Unauthorized request
         '500':
@@ -75,9 +69,6 @@ paths:
       responses:
         '200':
           description: Retrieves all stacks that are not settled
-          content:
-            application/json:
-              schema: {}
         '500':
           description: Failed to get all stacks
   /health:
@@ -92,9 +83,6 @@ paths:
       responses:
         '200':
           description: Service is healthy
-          content:
-            application/json:
-              schema: {}
         '500':
           description: Service is unhealthy
   /login:
@@ -123,7 +111,8 @@ paths:
           description: Logs in a user
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/AuthRequest'
         '500':
           description: Failed to login user
   /register:
@@ -152,7 +141,8 @@ paths:
           description: Registers a new user
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/AuthRequest'
         '500':
           description: Failed to register user
   /revoke_api_token:
@@ -182,7 +172,8 @@ paths:
           description: Revokes an API token for the user
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RevokeApiTokenRequest'
         '401':
           description: Unauthorized request
         '500':
@@ -217,9 +208,6 @@ paths:
       responses:
         '200':
           description: Retrieves all subscriptions for all nodes
-          content:
-            application/json:
-              schema: {}
         '500':
           description: Failed to get nodes subscriptions
   /tasks:
@@ -242,9 +230,6 @@ paths:
       responses:
         '200':
           description: Retrieves all tasks
-          content:
-            application/json:
-              schema: {}
         '500':
           description: Failed to get all tasks
 components:
