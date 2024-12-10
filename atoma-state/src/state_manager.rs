@@ -645,6 +645,7 @@ impl AtomaState {
     ///    state_manager.register(username, password_hash).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn register(&self, username: &str, password_hash: &str) -> Result<Option<i64>> {
         let result = sqlx::query("INSERT INTO users (username, password_hash) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING RETURNING id")
         .bind(username)

@@ -10,7 +10,7 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
-use tracing::instrument;
+use tracing::{error, instrument};
 
 use crate::AtomaAuthConfig;
 
@@ -340,6 +340,7 @@ impl Auth {
             )
             .await?
         {
+            error!("Access token was revoked");
             return Err(anyhow::anyhow!("Access token was revoked"));
         }
 
