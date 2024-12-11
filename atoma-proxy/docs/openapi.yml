@@ -12,13 +12,7 @@ paths:
     get:
       tags:
       - Health
-      summary: Handles the health check request.
-      description: |-
-        This endpoint is used to check the health of the atoma proxy service.
-
-        # Returns
-
-        Returns a JSON response with the status "ok".
+      summary: Health
       operationId: health
       responses:
         '200':
@@ -32,7 +26,7 @@ paths:
     post:
       tags:
       - Node Public Address Registration
-      summary: Handles the registration of a node's public address.
+      summary: Register node
       description: |-
         This endpoint allows nodes to register or update their public address in the system.
         When a node comes online or changes its address, it can use this endpoint to ensure
@@ -75,7 +69,7 @@ paths:
     post:
       tags:
       - Chat Completions
-      summary: Handles the chat completions request.
+      summary: Create chat completion
       description: |-
         This function processes chat completion requests by determining whether to use streaming
         or non-streaming response handling based on the request payload. For streaming requests,
@@ -122,7 +116,7 @@ paths:
     post:
       tags:
       - Embeddings
-      summary: Handles incoming embeddings requests by forwarding them to the appropriate AI node.
+      summary: Create embeddings
       description: |-
         This endpoint follows the OpenAI API format for generating vector embeddings from input text.
         The handler receives pre-processed metadata from middleware and forwards the request to
@@ -165,7 +159,7 @@ paths:
     post:
       tags:
       - Image Generations
-      summary: Handles incoming requests for AI image generation.
+      summary: Create image generation
       description: |-
         This endpoint processes requests to generate images using AI models by forwarding them
         to the appropriate AI node. The request metadata and compute units have already been
@@ -214,7 +208,7 @@ paths:
     get:
       tags:
       - Models
-      summary: Handles requests to list available AI models.
+      summary: List models
       description: |-
         This endpoint mimics the OpenAI models endpoint format, returning a list of
         available models with their associated metadata and permissions. Each model

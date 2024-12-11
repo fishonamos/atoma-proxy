@@ -96,7 +96,7 @@ impl RequestModel for RequestModelEmbeddings {
     }
 }
 
-/// Handles incoming embeddings requests by forwarding them to the appropriate AI node.
+/// Create embeddings
 ///
 /// This endpoint follows the OpenAI API format for generating vector embeddings from input text.
 /// The handler receives pre-processed metadata from middleware and forwards the request to
