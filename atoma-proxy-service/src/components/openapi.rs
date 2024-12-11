@@ -42,7 +42,7 @@ pub fn openapi_router() -> Router {
             (name = "Stacks", description = "Stacks management"),
         ),
         servers(
-            (url = "http://localhost:3005", description = "Local server"),
+            (url = "http://localhost:8081", description = "Local server"),
         )
     )]
     struct ApiDoc;

@@ -6,7 +6,7 @@ info:
     name: Apache-2.0
   version: 0.1.0
 servers:
-- url: http://localhost:3005
+- url: http://localhost:8081
   description: Local server
 paths:
   /api_tokens:
@@ -30,6 +30,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to get all api tokens
+      security:
+      - bearerAuth: []
   /generate_api_token:
     get:
       tags:
@@ -52,6 +54,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to generate api token
+      security:
+      - bearerAuth: []
   /health:
     get:
       tags:
@@ -159,6 +163,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to revoke api token
+      security:
+      - bearerAuth: []
   /stacks:
     get:
       tags:
@@ -251,22 +257,18 @@ components:
       properties:
         api_token:
           type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
 tags:
-- name: health
+- name: Health
   description: Health check endpoints
-- name: generate_api_token
+- name: Auth
   description: Authentication and API token management
-- name: revoke_api_token
-  description: Authentication and API token management
-- name: register
-  description: Authentication and API token management
-- name: login
-  description: Authentication and API token management
-- name: get_all_api_tokens
-  description: Authentication and API token management
-- name: get_stacks
-  description: Stack operations
-- name: get_tasks
-  description: Task management
-- name: get_subscriptions
-  description: Node subscription management
+- name: Tasks
+  description: Atoma's Tasks management
+- name: Subscriptions
+  description: Node task subscriptions management
+- name: Stacks
+  description: Stacks management
