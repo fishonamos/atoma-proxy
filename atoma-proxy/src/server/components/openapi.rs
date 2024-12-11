@@ -16,21 +16,20 @@ pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
         nest(
-            (path = HEALTH_PATH, api = HealthOpenApi),
-            (path = MODELS_PATH, api = ModelsOpenApi),
-            (path = NODE_PUBLIC_ADDRESS_REGISTRATION_PATH, api = NodePublicAddressRegistrationOpenApi),
-            (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi),
-            (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi),
-            (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi),
+            (path = HEALTH_PATH, api = HealthOpenApi, tags = ["Health"]),
+            (path = MODELS_PATH, api = ModelsOpenApi, tags = ["Models"]),
+            (path = NODE_PUBLIC_ADDRESS_REGISTRATION_PATH, api = NodePublicAddressRegistrationOpenApi, tags = ["Node Public Address Registration"]),
+            (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi, tags = ["Chat Completions"]),
+            (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi, tags = ["Embeddings"]),
+            (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi, tags = ["Image Generations"]),
         ),
         tags(
-            (name = "health", description = "Health check"),
-            (name = "chat", description = "Chat completions"),
-            (name = "models", description = "Models"),
-            (name = "node-public-address-registration", description = "Node public address registration"),
-            (name = "chat-completions", description = "OpenAI's API chat completions v1 endpoint"),
-            (name = "embeddings", description = "OpenAI's API embeddings v1 endpoint"),
-            (name = "image-generations", description = "OpenAI's API image generations v1 endpoint"),
+            (name = "Health", description = "Health check"),
+            (name = "Chat Completions", description = "Chat completions"),
+            (name = "Models", description = "Models"),
+            (name = "Node Public Address Registration", description = "Node public address registration"),
+            (name = "Embeddings", description = "OpenAI's API embeddings v1 endpoint"),
+            (name = "Image Generations", description = "OpenAI's API image generations v1 endpoint"),
         ),
         servers(
             (url = "http://localhost:8080"),
