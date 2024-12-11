@@ -62,6 +62,9 @@ pub(crate) fn auth_router() -> Router<ProxyServiceState> {
 #[utoipa::path(
     get,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Retrieves all API tokens for the user"),
         (status = UNAUTHORIZED, description = "Unauthorized request"),
@@ -116,6 +119,9 @@ pub(crate) struct GenerateApiTokenOpenApi;
 #[utoipa::path(
     get,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Generates an API token for the user"),
         (status = UNAUTHORIZED, description = "Unauthorized request"),
@@ -171,6 +177,9 @@ pub(crate) struct RevokeApiTokenOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Revokes an API token for the user", body = RevokeApiTokenRequest),
         (status = UNAUTHORIZED, description = "Unauthorized request"),

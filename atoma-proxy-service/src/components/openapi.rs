@@ -1,5 +1,8 @@
 use axum::Router;
-use utoipa::OpenApi;
+use utoipa::{
+    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
+    Modify, OpenApi,
+};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
@@ -20,6 +23,7 @@ use crate::{
 pub fn openapi_router() -> Router {
     #[derive(OpenApi)]
     #[openapi(
+        modifiers(&SecurityAddon),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi, tags = ["Health"]),
             (path = GENERATE_API_TOKEN_PATH, api = GenerateApiTokenOpenApi, tags = ["Auth"]),
@@ -42,10 +46,23 @@ pub fn openapi_router() -> Router {
             (name = "Stats", description = "Stats and metrics"),
         ),
         servers(
-            (url = "http://localhost:3005", description = "Local server"),
+            (url = "http://localhost:8081", description = "Local server"),
         )
     )]
     struct ApiDoc;
+
+    struct SecurityAddon;
+
+    impl Modify for SecurityAddon {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            if let Some(components) = openapi.components.as_mut() {
+                components.add_security_scheme(
+                    "bearerAuth",
+                    SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+                )
+            }
+        }
+    }
 
     // Generate the OpenAPI spec and write it to a file in debug mode
     #[cfg(debug_assertions)]

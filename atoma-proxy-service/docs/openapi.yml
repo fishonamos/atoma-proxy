@@ -6,7 +6,7 @@ info:
     name: Apache-2.0
   version: 0.1.0
 servers:
-- url: http://localhost:3005
+- url: http://localhost:8081
   description: Local server
 paths:
   /api_tokens:
@@ -30,6 +30,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to get all api tokens
+      security:
+      - bearerAuth: []
   /compute_units_processed:
     get:
       tags:
@@ -92,6 +94,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to generate api token
+      security:
+      - bearerAuth: []
   /health:
     get:
       tags:
@@ -241,6 +245,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to revoke api token
+      security:
+      - bearerAuth: []
   /stacks:
     get:
       tags:
@@ -333,6 +339,10 @@ components:
       properties:
         api_token:
           type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
 tags:
 - name: Health
   description: Health check endpoints
