@@ -14,6 +14,7 @@ use axum::response::{IntoResponse, Response, Sse};
 use axum::Extension;
 use axum::{extract::State, http::HeaderMap, Json};
 use serde_json::Value;
+use sqlx::types::chrono::{DateTime, Utc};
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 use x25519_dalek::PublicKey;
@@ -186,6 +187,7 @@ pub async fn chat_completions_handler(
             metadata.endpoint,
             metadata.salt,
             metadata.node_x25519_public_key,
+            metadata.model_name,
         )
         .await
     } else {
@@ -200,6 +202,7 @@ pub async fn chat_completions_handler(
             metadata.endpoint,
             metadata.salt,
             metadata.node_x25519_public_key,
+            metadata.model_name,
         )
         .await
     }
@@ -268,6 +271,7 @@ async fn handle_non_streaming_response(
     endpoint: String,
     salt: Option<[u8; constants::SALT_SIZE]>,
     node_x25519_public_key: Option<PublicKey>,
+    model_name: String,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
@@ -353,6 +357,8 @@ async fn handle_non_streaming_response(
         .state_manager_sender
         .send(
             AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                timestamp: DateTime::<Utc>::from(std::time::SystemTime::now()),
+                model_name,
                 node_small_id: selected_node_id,
                 input_tokens,
                 output_tokens,
@@ -424,6 +430,7 @@ async fn handle_streaming_response(
     endpoint: String,
     salt: Option<[u8; constants::SALT_SIZE]>,
     node_x25519_public_key: Option<PublicKey>,
+    model_name: String,
 ) -> Result<Response<Body>, StatusCode> {
     // NOTE: If streaming is requested, add the include_usage option to the payload
     // so that the atoma node state manager can be updated with the total number of tokens
@@ -462,6 +469,7 @@ async fn handle_streaming_response(
         node_id,
         shared_secret,
         salt,
+        model_name,
     ))
     .keep_alive(
         axum::response::sse::KeepAlive::new()

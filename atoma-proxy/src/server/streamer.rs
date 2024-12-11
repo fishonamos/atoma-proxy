@@ -12,6 +12,7 @@ use flume::Sender;
 use futures::Stream;
 use reqwest;
 use serde_json::Value;
+use sqlx::types::chrono::{DateTime, Utc};
 use tracing::{error, instrument};
 use x25519_dalek::SharedSecret;
 
@@ -57,6 +58,8 @@ pub struct Streamer {
     shared_secret: Option<SharedSecret>,
     /// Salt for decryption of ciphertext streamed response from the inference node
     salt: Option<[u8; constants::SALT_SIZE]>,
+    /// Model name
+    model_name: String,
 }
 
 /// Represents the various states of a streaming process
@@ -84,6 +87,7 @@ impl Streamer {
         node_id: i64,
         shared_secret: Option<SharedSecret>,
         salt: Option<[u8; constants::SALT_SIZE]>,
+        model_name: String,
     ) -> Self {
         Self {
             stream: Box::pin(stream),
@@ -96,6 +100,7 @@ impl Streamer {
             node_id,
             shared_secret,
             salt,
+            model_name,
         }
     }
 
@@ -181,6 +186,8 @@ impl Streamer {
         // Update the nodes throughput performance
         if let Err(e) = self.state_manager_sender.send(
             AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                timestamp: DateTime::<Utc>::from(std::time::SystemTime::now()),
+                model_name: self.model_name.clone(),
                 node_small_id: self.node_id,
                 input_tokens,
                 output_tokens,
@@ -318,6 +325,7 @@ impl Stream for Streamer {
                     let latency = self.start.elapsed().as_secs_f64();
                     self.state_manager_sender
                         .send(AtomaAtomaStateManagerEvent::UpdateNodeLatencyPerformance {
+                            timestamp: DateTime::<Utc>::from(std::time::SystemTime::now()), // Convert to chrono::DateTime<Utc>
                             node_small_id: self.node_id,
                             latency,
                         })
