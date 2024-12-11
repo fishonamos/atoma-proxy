@@ -10,7 +10,8 @@ servers:
 paths:
   /health:
     get:
-      tags: []
+      tags:
+      - Health
       summary: Handles the health check request.
       description: |-
         This endpoint is used to check the health of the atoma proxy service.
@@ -29,7 +30,8 @@ paths:
           description: Service is unhealthy
   /node/registration:
     post:
-      tags: []
+      tags:
+      - Node Public Address Registration
       summary: Handles the registration of a node's public address.
       description: |-
         This endpoint allows nodes to register or update their public address in the system.
@@ -71,7 +73,8 @@ paths:
           description: Failed to register node public address
   /v1/chat/completions:
     post:
-      tags: []
+      tags:
+      - Chat Completions
       summary: Handles the chat completions request.
       description: |-
         This function processes chat completion requests by determining whether to use streaming
@@ -117,7 +120,8 @@ paths:
           description: Internal server error
   /v1/embeddings:
     post:
-      tags: []
+      tags:
+      - Embeddings
       summary: Handles incoming embeddings requests by forwarding them to the appropriate AI node.
       description: |-
         This endpoint follows the OpenAI API format for generating vector embeddings from input text.
@@ -159,7 +163,8 @@ paths:
           description: Internal server error
   /v1/images/generations:
     post:
-      tags: []
+      tags:
+      - Image Generations
       summary: Handles incoming requests for AI image generation.
       description: |-
         This endpoint processes requests to generate images using AI models by forwarding them
@@ -207,7 +212,8 @@ paths:
           description: Internal server error
   /v1/models:
     get:
-      tags: []
+      tags:
+      - Models
       summary: Handles requests to list available AI models.
       description: |-
         This endpoint mimics the OpenAI models endpoint format, returning a list of
@@ -278,17 +284,15 @@ paths:
           description: Failed to retrieve list of available models
 components: {}
 tags:
-- name: health
+- name: Health
   description: Health check
-- name: chat
+- name: Chat Completions
   description: Chat completions
-- name: models
+- name: Models
   description: Models
-- name: node-public-address-registration
+- name: Node Public Address Registration
   description: Node public address registration
-- name: chat-completions
-  description: OpenAI's API chat completions v1 endpoint
-- name: embeddings
+- name: Embeddings
   description: OpenAI's API embeddings v1 endpoint
-- name: image-generations
+- name: Image Generations
   description: OpenAI's API image generations v1 endpoint
