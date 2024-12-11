@@ -209,7 +209,7 @@ pub(crate) struct ModelsOpenApi;
     get,
     path = "",
     responses(
-        (status = OK, description = "List of available models", body = Value),
+        (status = OK, description = "List of available models"),
         (status = INTERNAL_SERVER_ERROR, description = "Failed to retrieve list of available models")
     )
 )]
@@ -435,7 +435,7 @@ pub(crate) struct HealthOpenApi;
     get,
     path = "",
     responses(
-        (status = OK, description = "Service is healthy", body = Value),
+        (status = OK, description = "Service is healthy"),
         (status = INTERNAL_SERVER_ERROR, description = "Service is unhealthy")
     )
 )]
