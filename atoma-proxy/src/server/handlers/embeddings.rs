@@ -10,6 +10,7 @@ use axum::{
     Extension, Json,
 };
 use serde_json::Value;
+use sqlx::types::chrono::{DateTime, Utc};
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 use x25519_dalek::PublicKey;
@@ -156,6 +157,7 @@ pub async fn embeddings_handler(
         metadata.endpoint,
         metadata.salt,
         metadata.node_x25519_public_key,
+        metadata.model_name,
     )
     .await
 }
@@ -206,6 +208,7 @@ async fn handle_embeddings_response(
     endpoint: String,
     salt: Option<[u8; constants::SALT_SIZE]>,
     node_x25519_public_key: Option<PublicKey>,
+    model_name: String,
 ) -> Result<Response<Body>, StatusCode> {
     let client = reqwest::Client::new();
     let time = Instant::now();
@@ -244,6 +247,8 @@ async fn handle_embeddings_response(
         .state_manager_sender
         .send(
             AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+                timestamp: DateTime::<Utc>::from(std::time::SystemTime::now()),
+                model_name,
                 node_small_id: selected_node_id,
                 input_tokens: num_input_compute_units,
                 output_tokens: 0,

@@ -1,6 +1,7 @@
 use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreatedEvent, StackTrySettleEvent, TaskRegisteredEvent,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::sync::oneshot;
@@ -23,6 +24,46 @@ pub struct AuthRequest {
 pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
+}
+
+/// Represents a computed units processed response
+/// This struct is used to represent the response for the get_compute_units_processed endpoint.
+/// The timestamp of the computed units processed measurement. We measure the computed units processed on hourly basis. We do these measurements for each model.
+/// So the timestamp is the hour for which it is measured.
+/// The amount is the sum of all computed units processed in that hour. The requests is the total number of requests in that hour.
+/// And the time is the time taken to process all computed units in that hour.
+///
+/// E.g. you have two requests in the hour, one with 10 computed units and the other with 20 computed units.
+/// The amount will be 30, the requests will be 2 and the time will be the sum of the time taken to process the 10 and 20 computed units.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct ComputedUnitsProcessedResponse {
+    /// Timestamp of the computed units processed measurement
+    pub timestamp: DateTime<Utc>,
+    /// Name of the model
+    pub model_name: String,
+    /// Amount of all computed units processed
+    pub amount: i64,
+    /// Number of requests
+    pub requests: i64,
+    /// Time (in seconds) taken to process all computed units
+    pub time: f64,
+}
+
+/// Represents a latency response
+/// This struct is used to represent the response for the get_latency endpoint.
+/// The timestamp of the latency measurement. We measure the latency on hourly basis. So the timestamp is the hour for which it is measured.
+/// The latency is the sum of all latencies in that hour. And the number of requests is the total number of requests in that hour.
+///
+/// E.g. you have two requests in the hour, one with 1 second latency and the other with 2 seconds latency.
+/// The latency will be 3 seconds and the requests will be 2.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct LatencyResponse {
+    /// Timestamp of the latency measurement
+    pub timestamp: DateTime<Utc>,
+    /// Sum of all latencies (in seconds) in that hour
+    pub latency: f64,
+    /// Total number of requests in that hour
+    pub requests: i64,
 }
 /// Represents a task in the system
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
@@ -281,6 +322,8 @@ pub enum AtomaAtomaStateManagerEvent {
         already_computed_units: i64,
     },
     UpdateNodeThroughputPerformance {
+        timestamp: DateTime<Utc>,
+        model_name: String,
         node_small_id: i64,
         input_tokens: i64,
         output_tokens: i64,
@@ -297,6 +340,7 @@ pub enum AtomaAtomaStateManagerEvent {
         time: f64,
     },
     UpdateNodeLatencyPerformance {
+        timestamp: DateTime<Utc>,
         node_small_id: i64,
         latency: f64,
     },
