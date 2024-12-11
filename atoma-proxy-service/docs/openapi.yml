@@ -30,6 +30,8 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to get all api tokens
+      security:
+      - bearerAuth: []
   /compute_units_processed:
     get:
       tags:
