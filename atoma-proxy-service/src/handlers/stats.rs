@@ -100,7 +100,9 @@ async fn get_compute_units_processed(
 #[openapi(paths(get_latency))]
 pub(crate) struct GetLatency;
 
-/// Get latency performance in the last `hours` hours.
+/// Get latency performance of the network for last 'query.hours' hours. E.g. get latency performance for last 2 hours.
+/// The response is vector of LatencyResponse objects.
+/// For each hour the response contains sum of the latencies (in seconds) and number of requests made in that hour.
 ///
 /// # Arguments
 ///

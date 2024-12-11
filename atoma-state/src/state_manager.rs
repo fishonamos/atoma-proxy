@@ -3152,7 +3152,7 @@ impl AtomaState {
 
     /// Add latency to the database.
     ///
-    /// This method inserts the latency into the `stats_latency` table.
+    /// This method inserts the latency into the `stats_latency` table. This measure the time from the request to first generated token.
     ///
     /// # Arguments
     ///
@@ -3788,8 +3788,17 @@ pub(crate) mod queries {
     ///
     /// This function creates two tables in the database:
     /// - `stats_compute_units_processed`: Stores the compute units processed by the system.
+    ///    - `id`: BIGSERIAL PRIMARY KEY - The unique identifier for the record.
+    ///    - `timestamp`: TIMESTAMPTZ NOT NULL - The timestamp of the data (we bucket the measurements by the hour).
+    ///    - `model_name`: TEXT NOT NULL - The name of the model used for the task.
+    ///    - `amount`: BIGINT NOT NULL - The number of compute units processed in the timestamp bucket.
+    ///    - `requests`: BIGINT NOT NULL DEFAULT 1 - The number of requests processed in the timestamp bucket.
+    ///    - `time`: DOUBLE PRECISION NOT NULL - The time (in seconds) taken to process the compute units in the timestamp bucket.
     /// - `stats_latency`: Stores the latency of the system.
-    ///
+    ///    - `id`: BIGSERIAL PRIMARY KEY - The unique identifier for the record.
+    ///    - `timestamp`: TIMESTAMPTZ UNIQUE NOT NULL - The timestamp of the data (we bucket the measurements by the hour).
+    ///    - `latency`: DOUBLE PRECISION NOT NULL - Sum of all latencies (in seconds) in the timestamp in timestamp bucket.
+    ///    - `requests`: BIGINT NOT NULL DEFAULT 1 - The number of requests processed in the timestamp bucket.
     /// # Arguments
     ///
     /// * `db` - A reference to the Postgres database pool.
@@ -3818,7 +3827,6 @@ pub(crate) mod queries {
     /// }
     /// ```
     async fn create_performance_tables(db: &PgPool) -> Result<()> {
-        dbg!();
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS stats_compute_units_processed (
                     id BIGSERIAL PRIMARY KEY,
@@ -3833,7 +3841,6 @@ pub(crate) mod queries {
         )
         .execute(db)
         .await?;
-        dbg!();
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_stats_compute_units_processed ON stats_compute_units_processed (timestamp);")
                 .execute(db)
                 .await?;
