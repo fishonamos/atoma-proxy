@@ -846,6 +846,8 @@ pub(crate) async fn handle_state_manager_event(
             handle_stack_created_event(state_manager, event, already_computed_units).await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
+            timestamp,
+            model_name,
             node_small_id,
             input_tokens,
             output_tokens,
@@ -857,6 +859,15 @@ pub(crate) async fn handle_state_manager_event(
                     node_small_id,
                     input_tokens,
                     output_tokens,
+                    time,
+                )
+                .await?;
+            state_manager
+                .state
+                .add_compute_units_processed(
+                    timestamp,
+                    model_name,
+                    input_tokens + output_tokens,
                     time,
                 )
                 .await?;
@@ -882,6 +893,7 @@ pub(crate) async fn handle_state_manager_event(
                 .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeLatencyPerformance {
+            timestamp,
             node_small_id,
             latency,
         } => {
@@ -889,6 +901,7 @@ pub(crate) async fn handle_state_manager_event(
                 .state
                 .update_node_latency_performance(node_small_id, latency)
                 .await?;
+            state_manager.state.add_latency(timestamp, latency).await?;
         }
         AtomaAtomaStateManagerEvent::GetSelectedNodeX25519PublicKey {
             selected_node_id,

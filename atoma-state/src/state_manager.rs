@@ -1,11 +1,12 @@
 use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
-    AtomaAtomaStateManagerEvent, CheapestNode, NodeSubscription, Stack, StackAttestationDispute,
-    StackSettlementTicket, Task,
+    AtomaAtomaStateManagerEvent, CheapestNode, ComputedUnitsProcessedResponse, LatencyResponse,
+    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task,
 };
 
 use atoma_sui::events::AtomaEvent;
+use chrono::{DateTime, Timelike, Utc};
 use flume::Receiver as FlumeReceiver;
 use sqlx::PgPool;
 use sqlx::{FromRow, Row};
@@ -2991,6 +2992,212 @@ impl AtomaState {
 
         Ok(tokens.into_iter().map(|row| row.get("token")).collect())
     }
+
+    /// Get compute units processed for the last `last_hours` hours.
+    ///
+    /// This method fetches the compute units processed for the last `last_hours` hours from the `stats_compute_units_processed` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `last_hours` - The number of hours to fetch the compute units processed for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<ComputedUnitsProcessedResponse>>`: A result containing either:
+    ///   - `Ok(Vec<ComputedUnitsProcessedResponse>)`: The compute units processed for the last `last_hours` hours.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_compute_units_processed(state_manager: &AtomaStateManager, last_hours: usize) -> Result<Vec<ComputedUnitsProcessedResponse>, AtomaStateManagerError> {
+    ///    state_manager.get_compute_units_processed(last_hours).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn get_compute_units_processed(
+        &self,
+        last_hours: usize,
+    ) -> Result<Vec<ComputedUnitsProcessedResponse>> {
+        let timestamp = Utc::now();
+        let start_timestamp = timestamp
+            .checked_sub_signed(chrono::Duration::hours(last_hours as i64))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        let performances_per_hour = sqlx::query("SELECT timestamp, model_name, amount, requests, time FROM stats_compute_units_processed WHERE timestamp >= $1 ORDER BY timestamp ASC, model_name ASC")
+                        .bind(start_timestamp)
+                        .fetch_all(&self.db)
+                        .await?;
+        performances_per_hour
+            .into_iter()
+            .map(|performance| {
+                ComputedUnitsProcessedResponse::from_row(&performance)
+                    .map_err(AtomaStateManagerError::from)
+            })
+            .collect()
+    }
+
+    /// Get latency performance for the last `last_hours` hours.
+    ///
+    /// This method fetches the latency performance for the last `last_hours` hours from the `stats_latency` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `last_hours` - The number of hours to fetch the latency performance for.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<LatencyResponse>>`: A result containing either:
+    ///   - `Ok(Vec<LatencyResponse>)`: The latency performance for the last `last_hours` hours.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_latency_performance(state_manager: &AtomaStateManager, last_hours: usize) -> Result<Vec<LatencyResponse>, AtomaStateManagerError> {
+    ///   state_manager.get_latency_performance(last_hours).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn get_latency_performance(&self, last_hours: usize) -> Result<Vec<LatencyResponse>> {
+        let timestamp = Utc::now();
+        let start_timestamp = timestamp
+            .checked_sub_signed(chrono::Duration::hours(last_hours as i64))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        let performances_per_hour = sqlx::query(
+            "SELECT timestamp, latency, requests FROM stats_latency WHERE timestamp >= $1 ORDER BY timestamp ASC",
+        )
+        .bind(start_timestamp)
+        .fetch_all(&self.db)
+        .await?;
+        performances_per_hour
+            .into_iter()
+            .map(|performance| {
+                LatencyResponse::from_row(&performance).map_err(AtomaStateManagerError::from)
+            })
+            .collect()
+    }
+
+    /// Add compute units processed to the database.
+    ///
+    /// This method inserts the compute units processed into the `stats_compute_units_processed` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - The timestamp of the data.
+    /// * `compute_units_processed` - The number of compute units processed.
+    /// * `time` - The time taken to process the compute units.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use chrono::{DateTime, Utc};
+    ///
+    /// async fn add_compute_units_processed(state_manager: &AtomaStateManager, timestamp: DateTime<Utc>, compute_units_processed: i64, time: f64) -> Result<(), AtomaStateManagerError> {
+    ///   state_manager.add_compute_units_processed(timestamp, compute_units_processed, time).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn add_compute_units_processed(
+        &self,
+        timestamp: DateTime<Utc>,
+        model_name: String,
+        compute_units_processed: i64,
+        time: f64,
+    ) -> Result<()> {
+        // We want the table to gather data in hourly intervals
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        sqlx::query(
+            "INSERT INTO stats_compute_units_processed (timestamp, model_name, amount, time) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (timestamp, model_name) DO UPDATE SET 
+                    amount = stats_compute_units_processed.amount + EXCLUDED.amount,
+                    time = stats_compute_units_processed.time + EXCLUDED.time,
+                    requests = stats_compute_units_processed.requests + 1",
+        )
+        .bind(timestamp)
+        .bind(model_name)
+        .bind(compute_units_processed)
+        .bind(time)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Add latency to the database.
+    ///
+    /// This method inserts the latency into the `stats_latency` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - The timestamp of the data.
+    /// * `latency` - The latency of the data.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    /// use chrono::{DateTime, Utc};
+    ///
+    /// async fn add_latency(state_manager: &AtomaStateManager, timestamp: DateTime<Utc>, latency: f64) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.add_latency(timestamp, latency).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn add_latency(&self, timestamp: DateTime<Utc>, latency: f64) -> Result<()> {
+        // We want the table to gather data in hourly intervals
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        sqlx::query(
+            "INSERT INTO stats_latency (timestamp, latency) VALUES ($1, $2)
+                 ON CONFLICT (timestamp) DO UPDATE SET 
+                    latency = stats_latency.latency + EXCLUDED.latency,
+                    requests = stats_latency.requests + 1",
+        )
+        .bind(timestamp)
+        .bind(latency)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
@@ -3013,6 +3220,8 @@ pub enum AtomaStateManagerError {
     FailedToRetrieveExistingTotalHash(i64),
     #[error("Failed to send result to channel")]
     ChannelSendError,
+    #[error("Invalid timestamp")]
+    InvalidTimestamp,
 }
 
 pub(crate) mod queries {
@@ -3575,6 +3784,76 @@ pub(crate) mod queries {
         Ok(())
     }
 
+    /// Creates the `stats_compute_units_processed` and `stats_latency` tables in the database.
+    ///
+    /// This function creates two tables in the database:
+    /// - `stats_compute_units_processed`: Stores the compute units processed by the system.
+    /// - `stats_latency`: Stores the latency of the system.
+    ///
+    /// # Arguments
+    ///
+    /// * `db` - A reference to the Postgres database pool.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the tables are created successfully, or an error if any operation fails.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the SQL queries fail to execute.
+    /// Possible reasons for failure include:
+    /// - Database connection issues
+    /// - Insufficient permissions
+    /// - Syntax errors in the SQL queries
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use sqlx::PgPool;
+    /// use atoma_node::atoma_state::queries;
+    ///
+    /// async fn setup_database(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    ///    queries::create_performance_tables(pool).await?;
+    ///    Ok(())
+    /// }
+    /// ```
+    async fn create_performance_tables(db: &PgPool) -> Result<()> {
+        dbg!();
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS stats_compute_units_processed (
+                    id BIGSERIAL PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL,
+                    model_name TEXT NOT NULL,
+                    amount BIGINT NOT NULL,
+                    requests BIGINT NOT NULL DEFAULT 1,
+                    time DOUBLE PRECISION NOT NULL,
+                    UNIQUE (timestamp, model_name),
+                    CHECK (date_part('minute', timestamp) = 0 AND date_part('second', timestamp) = 0 AND date_part('milliseconds', timestamp) = 0)
+                )",
+        )
+        .execute(db)
+        .await?;
+        dbg!();
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_stats_compute_units_processed ON stats_compute_units_processed (timestamp);")
+                .execute(db)
+                .await?;
+        sqlx::query(
+                "CREATE TABLE IF NOT EXISTS stats_latency (
+                        id BIGSERIAL PRIMARY KEY,
+                        timestamp TIMESTAMPTZ UNIQUE NOT NULL,
+                        latency DOUBLE PRECISION NOT NULL,
+                        requests BIGINT NOT NULL DEFAULT 1,
+                        CHECK (date_part('minute', timestamp) = 0 AND date_part('second', timestamp) = 0 AND date_part('milliseconds', timestamp) = 0)
+                    )",
+            )
+            .execute(db)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_stats_latency ON stats_latency (timestamp);")
+            .execute(db)
+            .await?;
+        Ok(())
+    }
+
     /// Creates all the necessary tables in the database.
     ///
     /// This function executes SQL queries to create the following tables:
@@ -3628,6 +3907,7 @@ pub(crate) mod queries {
         create_table_users(db).await?;
         create_table_refresh_tokens(db).await?;
         create_table_api_tokens(db).await?;
+        create_performance_tables(db).await?;
 
         Ok(())
     }

@@ -30,6 +30,46 @@ paths:
           description: Unauthorized request
         '500':
           description: Failed to get all api tokens
+  /compute_units_processed:
+    get:
+      tags:
+      - Stats
+      summary: ' Get compute unit processed in the last `hours` hours per model.'
+      description: |2-
+         # Arguments
+
+         * `proxy_service_state` - The shared state containing the state manager
+         * `query` - The query containing the number of hours to look back
+
+         # Returns
+
+         * `Result<Json<Vec<ComputedUnitsProcessedResponse>>` - A JSON response containing a list of computed units processed
+           - `Ok(Json<Vec<ComputedUnitsProcessedResponse>>)` - Successfully retrieved computed units processed
+           - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve computed units processed from state manager
+
+         # Example Response
+
+         Returns a JSON array of ComputedUnitsProcessedResponse objects for the specified hours
+         ```json
+         [
+            {
+                timestamp: "2024-03-21T12:00:00Z",
+                model_name: "example_model",
+                amount: 123,
+                requests: 2,
+                time: 45
+           }
+        ]
+        ```
+      operationId: get_compute_units_processed
+      responses:
+        '200':
+          description: Retrieves all computed units processed
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Failed to get performance
   /generate_api_token:
     get:
       tags:
@@ -66,6 +106,45 @@ paths:
           description: Service is healthy
         '500':
           description: Service is unhealthy
+  /latency:
+    get:
+      tags:
+      - Stats
+      summary: Get latency performance in the last `hours` hours.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `query` - The query containing the number of hours to look back
+
+        # Returns
+
+        * `Result<Json<Vec<LatencyResponse>>` - A JSON response containing a list of latency performance
+          - `Ok(Json<Vec<LatencyResponse>>)` - Successfully retrieved latency performance
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve latency performance from state manager
+
+        # Example Response
+
+        Returns a JSON array of LatencyResponse objects for the specified hours
+        ```json
+        [
+          {
+             timestamp: "2024-03-21T12:00:00Z",
+             latency: 123,
+             requests: 2,
+             time: 45
+          }
+        ]
+        ```
+      operationId: get_latency
+      responses:
+        '200':
+          description: Retrieves all latency performance
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Failed to get performance
   /login:
     post:
       tags:
@@ -268,5 +347,7 @@ tags:
   description: Stack operations
 - name: get_tasks
   description: Task management
+- name: get_stats
+  description: Stats and metrics
 - name: get_subscriptions
   description: Node subscription management

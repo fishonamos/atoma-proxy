@@ -14,8 +14,8 @@ use utoipa::OpenApi;
 use crate::{
     components::openapi::openapi_router,
     handlers::{
-        auth::auth_router, stacks::stacks_router, subscriptions::subscriptions_router,
-        tasks::tasks_router,
+        auth::auth_router, stacks::stacks_router, stats::stats_router,
+        subscriptions::subscriptions_router, tasks::tasks_router,
     },
 };
 
@@ -140,6 +140,7 @@ pub fn create_proxy_service_router(proxy_service_state: ProxyServiceState) -> Ro
         .merge(stacks_router())
         .merge(subscriptions_router())
         .merge(tasks_router())
+        .merge(stats_router())
         .layer(cors)
         .with_state(proxy_service_state)
         .route(HEALTH_PATH, get(health))

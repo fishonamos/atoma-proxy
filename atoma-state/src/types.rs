@@ -1,6 +1,7 @@
 use atoma_sui::events::{
     StackAttestationDisputeEvent, StackCreatedEvent, StackTrySettleEvent, TaskRegisteredEvent,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tokio::sync::oneshot;
@@ -23,6 +24,22 @@ pub struct AuthRequest {
 pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct ComputedUnitsProcessedResponse {
+    pub timestamp: DateTime<Utc>,
+    pub model_name: String,
+    pub amount: i64,
+    pub requests: i64,
+    pub time: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct LatencyResponse {
+    pub timestamp: DateTime<Utc>,
+    pub latency: f64,
+    pub requests: i64,
 }
 /// Represents a task in the system
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
@@ -281,6 +298,8 @@ pub enum AtomaAtomaStateManagerEvent {
         already_computed_units: i64,
     },
     UpdateNodeThroughputPerformance {
+        timestamp: DateTime<Utc>,
+        model_name: String,
         node_small_id: i64,
         input_tokens: i64,
         output_tokens: i64,
@@ -297,6 +316,7 @@ pub enum AtomaAtomaStateManagerEvent {
         time: f64,
     },
     UpdateNodeLatencyPerformance {
+        timestamp: DateTime<Utc>,
         node_small_id: i64,
         latency: f64,
     },

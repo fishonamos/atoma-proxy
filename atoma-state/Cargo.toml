@@ -6,11 +6,12 @@ license.workspace = true
 
 [dependencies]
 atoma-sui = { workspace = true }
+chrono.workspace = true
 config = { workspace = true }
 flume = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sqlx = { workspace = true, features = ["runtime-tokio-native-tls", "sqlite"] }
+sqlx = { workspace = true, features = ["chrono", "runtime-tokio-native-tls", "sqlite"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }

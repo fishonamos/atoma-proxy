@@ -89,6 +89,9 @@ pub struct RequestMetadataExtension {
 
     /// Optional node x25519 public key used for encrypting this this request.
     pub node_x25519_public_key: Option<PublicKey>,
+
+    /// Model name
+    pub model_name: String,
 }
 
 impl RequestMetadataExtension {
@@ -255,12 +258,17 @@ pub async fn authenticate_middleware(
         })?;
         headers.insert(constants::TX_DIGEST, tx_digest_header);
     }
+    let request_model = RequestModelChatCompletions::new(&body_json).map_err(|_| {
+        error!("Failed to parse body as chat completions request model");
+        StatusCode::BAD_REQUEST
+    })?;
     req_parts.extensions.insert(RequestMetadataExtension {
         node_address,
         node_id,
         num_compute_units,
         selected_stack_small_id: stack_small_id,
         endpoint: endpoint.clone(),
+        model_name: request_model.get_model()?,
         ..Default::default()
     });
     utils::handle_confidential_compute_content(state, &mut headers, &endpoint, node_id).await?;
