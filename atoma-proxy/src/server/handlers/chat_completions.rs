@@ -122,7 +122,7 @@ impl RequestModel for RequestModelChatCompletions {
     }
 }
 
-/// Handles the chat completions request.
+/// Create chat completion
 ///
 /// This function processes chat completion requests by determining whether to use streaming
 /// or non-streaming response handling based on the request payload. For streaming requests,

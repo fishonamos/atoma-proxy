@@ -98,7 +98,7 @@ impl RequestModel for RequestModelImageGenerations {
     }
 }
 
-/// Handles incoming requests for AI image generation.
+/// Create image generation
 ///
 /// This endpoint processes requests to generate images using AI models by forwarding them
 /// to the appropriate AI node. The request metadata and compute units have already been

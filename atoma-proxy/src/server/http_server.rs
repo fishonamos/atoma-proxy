@@ -146,7 +146,7 @@ impl ProxyState {
 #[openapi(paths(models_handler))]
 pub(crate) struct ModelsOpenApi;
 
-/// Handles requests to list available AI models.
+/// List models
 ///
 /// This endpoint mimics the OpenAI models endpoint format, returning a list of
 /// available models with their associated metadata and permissions. Each model
@@ -272,7 +272,7 @@ pub struct NodePublicAddressAssignment {
 /// generate the OpenAPI specification from the code.
 pub(crate) struct NodePublicAddressRegistrationOpenApi;
 
-/// Handles the registration of a node's public address.
+/// Register node
 ///
 /// This endpoint allows nodes to register or update their public address in the system.
 /// When a node comes online or changes its address, it can use this endpoint to ensure
@@ -424,13 +424,7 @@ pub async fn node_public_address_registration(
 /// JSON response indicating the service status.
 pub(crate) struct HealthOpenApi;
 
-/// Handles the health check request.
-///
-/// This endpoint is used to check the health of the atoma proxy service.
-///
-/// # Returns
-///
-/// Returns a JSON response with the status "ok".  
+/// Health
 #[utoipa::path(
     get,
     path = "",
