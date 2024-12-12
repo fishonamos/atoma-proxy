@@ -35,6 +35,12 @@ pub const CONFIDENTIAL_EMBEDDINGS_PATH: &str = "/v1/confidential/embeddings";
 /// and is used to generate vector embeddings for input text.
 pub const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
+/// The model field in the request payload.
+const MODEL: &str = "model";
+
+/// The input field in the request payload.
+const INPUT: &str = "input";
+
 // A model representing an embeddings request payload.
 ///
 /// This struct encapsulates the necessary fields for processing an embeddings request
@@ -54,11 +60,11 @@ pub(crate) struct EmbeddingsOpenApi;
 impl RequestModel for RequestModelEmbeddings {
     fn new(request: &Value) -> Result<Self, StatusCode> {
         let model = request
-            .get("model")
+            .get(MODEL)
             .and_then(|m| m.as_str())
             .ok_or(StatusCode::BAD_REQUEST)?;
         let input = request
-            .get("input")
+            .get(INPUT)
             .and_then(|i| i.as_str())
             .ok_or(StatusCode::BAD_REQUEST)?;
 
