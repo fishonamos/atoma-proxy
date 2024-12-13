@@ -14,13 +14,14 @@ services:
       - atoma-network
 
   atoma-proxy:
+    image: ghcr.io/atoma-network/atoma-proxy:latest
     build:
       context: .
       dockerfile: Dockerfile
       args:
        TRACE_LEVEL: ${TRACE_LEVEL:-info}
     volumes:
-      - ./config.toml:/app/config.toml
+      - ${CONFIG_PATH:-./config.toml}:/app/config.toml
       - ./logs:/app/logs
       - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
     env_file:
