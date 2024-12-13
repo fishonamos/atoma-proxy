@@ -1056,6 +1056,8 @@ pub(crate) async fn handle_node_key_rotation_event(
         new_public_key,
         tee_remote_attestation_bytes,
     } = event;
+    // TODO: We need to check that the
+    utils::verify_quote_v4_attestation(&tee_remote_attestation_bytes, &new_public_key).await?;
     state_manager
         .state
         .update_node_public_key(
@@ -1066,4 +1068,101 @@ pub(crate) async fn handle_node_key_rotation_event(
         )
         .await?;
     Ok(())
+}
+
+mod utils {
+    use super::*;
+
+    use dcap_qvl::collateral::get_collateral;
+    use dcap_qvl::quote::{Quote, Report};
+    use dcap_qvl::verify::verify;
+    use std::time::Duration;
+
+    /// The PCCS URL to obtain collateral for quote verification.
+    const PCCS_URL: &str = "https://pccs.intel.com/sgx/certification/v3/";
+
+    /// The timeout to use for quote verification.
+    const TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// Verifies a TEE (Trusted Execution Environment) remote attestation quote using Intel's DCAP Quote Verification Library.
+    ///
+    /// This function performs verification of a Quote V4 attestation by:
+    /// 1. Retrieving collateral data from Intel's Provisioning Certificate Caching Service (PCCS)
+    /// 2. Verifying the quote against the collateral using the current timestamp
+    ///
+    /// # Arguments
+    ///
+    /// * `tee_remote_attestation_bytes` - A byte slice containing the TEE remote attestation quote data
+    /// * `new_public_key` - A byte slice containing the public key to be verified (currently unused in verification)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<()>` - Ok(()) if verification succeeds, or an error if verification fails
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error in the following cases:
+    /// * If collateral retrieval from PCCS fails
+    /// * If the system time cannot be determined
+    /// * If quote verification fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use your_crate::verify_quote_v4_attestation;
+    ///
+    /// async fn verify_attestation() {
+    ///     let quote_data = vec![/* quote data */];
+    ///     let public_key = vec![/* public key data */];
+    ///     
+    ///     match verify_quote_v4_attestation(&quote_data, &public_key).await {
+    ///         Ok(()) => println!("Attestation verified successfully"),
+    ///         Err(e) => eprintln!("Attestation verification failed: {:?}", e),
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Notes
+    ///
+    /// * Uses Intel's PCCS service at a hardcoded URL with a 10-second timeout
+    /// * The `new_public_key` parameter is currently passed through but not used in the verification process
+    /// * This function is specifically for Quote V4 format attestations
+    pub(crate) async fn verify_quote_v4_attestation(
+        quote_bytes: &[u8],
+        new_public_key: &[u8],
+    ) -> Result<()> {
+        let collateral = get_collateral(PCCS_URL, quote_bytes, TIMEOUT)
+            .await
+            .map_err(|e| AtomaStateManagerError::FailedToRetrieveCollateral(format!("{e:?}")))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| AtomaStateManagerError::UnixTimeWentBackwards(e.to_string()))?
+            .as_secs() as u64;
+        let quote = Quote::parse(&quote_bytes)
+            .map_err(|e| AtomaStateManagerError::FailedToParseQuote(format!("{e:?}")))?;
+        match quote.report {
+            Report::SgxEnclave(_) => {
+                return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
+                    "Report SGX type not supported",
+                )));
+            }
+            Report::TD10(report) => {
+                if report.report_data != new_public_key {
+                    return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
+                        "Report TD10 data does not match new public key",
+                    )));
+                }
+            }
+            Report::TD15(report) => {
+                if report.base.report_data != new_public_key {
+                    return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
+                        "Report TD15 data does not match new public key",
+                    )));
+                }
+            }
+        }
+        verify(&quote_bytes, &collateral, now)
+            .map_err(|e| AtomaStateManagerError::FailedToVerifyQuote(format!("{e:?}")))?;
+        Ok(())
+    }
 }

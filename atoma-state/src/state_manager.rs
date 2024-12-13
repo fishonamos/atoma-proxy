@@ -3226,4 +3226,12 @@ pub enum AtomaStateManagerError {
     InvalidTimestamp,
     #[error("Failed to run migrations")]
     FailedToRunMigrations(#[from] sqlx::migrate::MigrateError),
+    #[error("Failed to verify quote: `{0}`")]
+    FailedToVerifyQuote(String),
+    #[error("Failed to parse quote: `{0}`")]
+    FailedToParseQuote(String),
+    #[error("Unix time went backwards: `{0}`")]
+    UnixTimeWentBackwards(String),
+    #[error("Failed to retrieve collateral: `{0}`")]
+    FailedToRetrieveCollateral(String),
 }
