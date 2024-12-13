@@ -32,6 +32,15 @@ pub const CONFIDENTIAL_IMAGE_GENERATIONS_PATH: &str = "/v1/confidential/images/g
 /// This endpoint follows the OpenAI API format for image generations
 pub const IMAGE_GENERATIONS_PATH: &str = "/v1/images/generations";
 
+/// The model field in the request payload.
+const MODEL: &str = "model";
+
+/// The n field in the request payload.
+const N: &str = "n";
+
+/// The size field in the request payload.
+const SIZE: &str = "size";
+
 /// A model representing the parameters for an image generation request.
 ///
 /// This struct encapsulates the required parameters for generating images through
@@ -54,15 +63,15 @@ pub(crate) struct ImageGenerationsOpenApi;
 impl RequestModel for RequestModelImageGenerations {
     fn new(request: &Value) -> Result<Self, StatusCode> {
         let model = request
-            .get("model")
+            .get(MODEL)
             .and_then(|m| m.as_str())
             .ok_or(StatusCode::BAD_REQUEST)?;
         let n = request
-            .get("n")
+            .get(N)
             .and_then(|n| n.as_u64())
             .ok_or(StatusCode::BAD_REQUEST)?;
         let size = request
-            .get("size")
+            .get(SIZE)
             .and_then(|s| s.as_str())
             .ok_or(StatusCode::BAD_REQUEST)?;
 

@@ -36,6 +36,15 @@ pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 /// The interval for the keep-alive message in the SSE stream.
 const STREAM_KEEP_ALIVE_INTERVAL_IN_SECONDS: u64 = 15;
 
+/// The model field in the request payload.
+const MODEL: &str = "model";
+
+/// The messages field in the request payload.
+const MESSAGES: &str = "messages";
+
+/// The max_tokens field in the request payload.
+const MAX_TOKENS: &str = "max_tokens";
+
 /// Represents a chat completion request model following the OpenAI API format
 pub struct RequestModelChatCompletions {
     /// The identifier of the model to use for the completion
@@ -63,15 +72,15 @@ pub(crate) struct ChatCompletionsOpenApi;
 impl RequestModel for RequestModelChatCompletions {
     fn new(request: &Value) -> Result<Self, StatusCode> {
         let model = request
-            .get("model")
+            .get(MODEL)
             .and_then(|m| m.as_str())
             .ok_or(StatusCode::BAD_REQUEST)?;
         let messages = request
-            .get("messages")
+            .get(MESSAGES)
             .and_then(|m| m.as_array())
             .ok_or(StatusCode::BAD_REQUEST)?;
         let max_tokens = request
-            .get("max_tokens")
+            .get(MAX_TOKENS)
             .and_then(|m| m.as_u64())
             .ok_or(StatusCode::BAD_REQUEST)?;
         Ok(Self {
