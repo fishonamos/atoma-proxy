@@ -5,10 +5,12 @@ use atoma_sui::events::{
     StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
     TaskDeprecationEvent, TaskRegisteredEvent,
 };
+use chrono::{DateTime, Utc};
 use tracing::{info, instrument, trace};
 
 use crate::{
     state_manager::Result,
+    timestamp_to_datetime_or_now,
     types::{AtomaAtomaStateManagerEvent, Stack},
     AtomaStateManager, AtomaStateManagerError,
 };
@@ -32,9 +34,17 @@ pub async fn handle_atoma_event(
         AtomaEvent::NodeUnsubscribedFromTaskEvent(event) => {
             handle_node_task_unsubscription_event(state_manager, event).await
         }
-        AtomaEvent::StackCreatedEvent(event) => {
-            // NOTE: Don't handle creation here. It's handled when the stack is created right away.
-            info!("Stack created event: {:?}", event);
+        AtomaEvent::StackCreatedEvent((event, timestamp)) => {
+            if event.owner != state_manager.sui_address {
+                // Our stacks are handled on the creation event.
+                handle_stack_created_event(
+                    state_manager,
+                    event,
+                    0,
+                    timestamp_to_datetime_or_now(timestamp),
+                )
+                .await?;
+            }
             Ok(())
         }
         AtomaEvent::StackCreateAndUpdateEvent(event) => {
@@ -42,8 +52,13 @@ pub async fn handle_atoma_event(
             info!("Stack creates and update event: {:?}", event);
             Ok(())
         }
-        AtomaEvent::StackTrySettleEvent(event) => {
-            handle_stack_try_settle_event(state_manager, event).await
+        AtomaEvent::StackTrySettleEvent((event, timestamp)) => {
+            handle_stack_try_settle_event(
+                state_manager,
+                event,
+                timestamp_to_datetime_or_now(timestamp),
+            )
+            .await
         }
         AtomaEvent::StackSettlementTicketEvent(event) => {
             handle_stack_settlement_ticket_event(state_manager, event).await
@@ -368,6 +383,7 @@ pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
     already_computed_units: i64,
+    created_at: DateTime<Utc>,
 ) -> Result<()> {
     let node_small_id = event.selected_node_id.inner;
     trace!(
@@ -377,7 +393,10 @@ pub(crate) async fn handle_stack_created_event(
     );
     let mut stack: Stack = event.into();
     stack.already_computed_units = already_computed_units;
-    state_manager.state.insert_new_stack(stack).await?;
+    state_manager
+        .state
+        .insert_new_stack(stack, created_at)
+        .await?;
     Ok(())
 }
 
@@ -410,6 +429,7 @@ pub(crate) async fn handle_stack_created_event(
 pub(crate) async fn handle_stack_try_settle_event(
     state_manager: &AtomaStateManager,
     event: StackTrySettleEvent,
+    timestamp: DateTime<Utc>,
 ) -> Result<()> {
     trace!(
         target = "atoma-state-handlers",
@@ -419,7 +439,7 @@ pub(crate) async fn handle_stack_try_settle_event(
     let stack_settlement_ticket = event.into();
     state_manager
         .state
-        .insert_new_stack_settlement_ticket(stack_settlement_ticket)
+        .insert_new_stack_settlement_ticket(stack_settlement_ticket, timestamp)
         .await?;
     Ok(())
 }
@@ -738,6 +758,7 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::GetStacksForModel {
             model,
             free_compute_units,
+            owner,
             result_sender,
         } => {
             trace!(
@@ -749,7 +770,7 @@ pub(crate) async fn handle_state_manager_event(
             );
             let stacks = state_manager
                 .state
-                .get_stacks_for_model(&model, free_compute_units)
+                .get_stacks_for_model(&model, free_compute_units, owner)
                 .await;
             result_sender
                 .send(stacks)
@@ -842,8 +863,15 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::NewStackAcquired {
             event,
             already_computed_units,
+            transaction_timestamp,
         } => {
-            handle_stack_created_event(state_manager, event, already_computed_units).await?;
+            handle_stack_created_event(
+                state_manager,
+                event,
+                already_computed_units,
+                transaction_timestamp,
+            )
+            .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
             timestamp,

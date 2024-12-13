@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period BOOLEAN NOT NULL,
     total_hash BYTEA NOT NULL,
     num_total_messages BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    settled_at TIMESTAMPTZ,
     FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
     FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
 );

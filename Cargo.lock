@@ -653,7 +653,7 @@ dependencies = [
 [[package]]
 name = "atoma-sui"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#893a48609c63e2791d1963b41d059ae2bc3977ac"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=quick-fix#bb9f81762adc6ecad6f483c1e67ad77048b8998b"
 dependencies = [
  "anyhow",
  "config",
@@ -672,7 +672,7 @@ dependencies = [
 [[package]]
 name = "atoma-utils"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#893a48609c63e2791d1963b41d059ae2bc3977ac"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#432d0da44699460a9890bda7e56c8c195a334aa6"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6320,9 +6320,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.23"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+checksum = "3cb6eb87a131f756572d7fb904f6e7b68633f09cca868c5df1c4b8d1a694bbba"
 
 [[package]]
 name = "serde"

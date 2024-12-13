@@ -295,6 +295,7 @@ pub enum AtomaAtomaStateManagerEvent {
     GetStacksForModel {
         model: String,
         free_compute_units: i64,
+        owner: String,
         result_sender: oneshot::Sender<Result<Vec<Stack>>>,
     },
     GetTasksForModel {
@@ -320,6 +321,7 @@ pub enum AtomaAtomaStateManagerEvent {
     NewStackAcquired {
         event: StackCreatedEvent,
         already_computed_units: i64,
+        transaction_timestamp: DateTime<Utc>,
     },
     UpdateNodeThroughputPerformance {
         timestamp: DateTime<Utc>,

@@ -27,6 +27,8 @@ pub struct AtomaStateManager {
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+    /// Sui address
+    pub sui_address: String,
 }
 
 impl AtomaStateManager {
@@ -35,11 +37,13 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        sui_address: String,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            sui_address,
         }
     }
 
@@ -51,6 +55,7 @@ impl AtomaStateManager {
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        sui_address: String,
     ) -> Result<Self> {
         let db = PgPool::connect(database_url).await?;
         // run migrations
@@ -59,6 +64,7 @@ impl AtomaStateManager {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            sui_address,
         })
     }
 
@@ -230,7 +236,12 @@ impl AtomaState {
     ///
     /// This function will return an error if the database query fails.
     #[instrument(level = "trace", skip_all, fields(%model, %free_units))]
-    pub async fn get_stacks_for_model(&self, model: &str, free_units: i64) -> Result<Vec<Stack>> {
+    pub async fn get_stacks_for_model(
+        &self,
+        model: &str,
+        free_units: i64,
+        owner: String,
+    ) -> Result<Vec<Stack>> {
         // TODO: filter also by security level and other constraints
         let tasks = sqlx::query(
             "WITH selected_stack AS (
@@ -239,6 +250,7 @@ impl AtomaState {
                 INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
                 WHERE tasks.model_name = $1
                 AND stacks.num_compute_units - stacks.already_computed_units >= $2
+                AND stacks.owner = $3
                 LIMIT 1
             )
             UPDATE stacks
@@ -248,6 +260,7 @@ impl AtomaState {
         )
         .bind(model)
         .bind(free_units)
+        .bind(owner)
         .fetch_all(&self.db)
         .await?;
         tasks
@@ -611,6 +624,38 @@ impl AtomaState {
     #[instrument(level = "trace", skip_all)]
     pub async fn get_current_stacks(&self) -> Result<Vec<Stack>> {
         let stacks = sqlx::query("SELECT * FROM stacks WHERE in_settle_period = false")
+            .fetch_all(&self.db)
+            .await?;
+        stacks
+            .into_iter()
+            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .collect()
+    }
+
+    /// Retrieves all stacks.
+    ///
+    /// This method fetches all stack records from the `stacks` table.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<Stack>>`: A result containing either:
+    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all stacks.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_current_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
+    ///    state_manager.get_current_stacks().await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub async fn get_all_stacks(&self) -> Result<Vec<Stack>> {
+        let stacks = sqlx::query("SELECT * FROM stacks")
             .fetch_all(&self.db)
             .await?;
         stacks
@@ -1303,11 +1348,11 @@ impl AtomaState {
             num_compute_units = %stack.num_compute_units,
             price = %stack.price)
     )]
-    pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
+    pub async fn insert_new_stack(&self, stack: Stack, created_at: DateTime<Utc>) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages, created_at) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
             .bind(stack.owner)
             .bind(stack.stack_small_id)
@@ -1320,6 +1365,7 @@ impl AtomaState {
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
             .bind(stack.num_total_messages)
+            .bind(created_at)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -1567,6 +1613,7 @@ impl AtomaState {
     pub async fn insert_new_stack_settlement_ticket(
         &self,
         stack_settlement_ticket: StackSettlementTicket,
+        timestamp: DateTime<Utc>,
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
         sqlx::query(
@@ -1600,10 +1647,13 @@ impl AtomaState {
         .await?;
 
         // Also update the stack to set in_settle_period to true
-        sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = $1")
-            .bind(stack_settlement_ticket.stack_small_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE stacks SET in_settle_period = true, settled_at = $2 WHERE stack_small_id = $1",
+        )
+        .bind(stack_settlement_ticket.stack_small_id)
+        .bind(timestamp)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }

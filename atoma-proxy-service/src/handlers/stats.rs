@@ -1,4 +1,4 @@
-use atoma_state::types::{ComputedUnitsProcessedResponse, LatencyResponse};
+use atoma_state::types::{ComputedUnitsProcessedResponse, LatencyResponse, Stack};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -16,6 +16,8 @@ type Result<T> = std::result::Result<T, StatusCode>;
 pub(crate) const COMPUTE_UNITS_PROCESSED_PATH: &str = "/compute_units_processed";
 /// The path for the compute_units_processed endpoint.
 pub(crate) const LATENCY_PATH: &str = "/latency";
+/// The path for the get_stacks endpoint.
+pub(crate) const GET_STACKS_PATH: &str = "/get_stacks";
 
 /// Returns a router with the stats endpoint.
 ///
@@ -28,6 +30,7 @@ pub(crate) fn stats_router() -> Router<ProxyServiceState> {
             get(get_compute_units_processed),
         )
         .route(LATENCY_PATH, get(get_latency))
+        .route(GET_STACKS_PATH, get(get_stacks))
 }
 
 /// OpenAPI documentation for the get_compute_units_processed endpoint.
@@ -145,6 +148,64 @@ async fn get_latency(
         proxy_service_state
             .atoma_state
             .get_latency_performance(query.hours)
+            .await
+            .map_err(|_| {
+                error!("Failed to get performance");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    ))
+}
+
+/// OpenAPI documentation for the get_stacks endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_stacks
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_stacks))]
+pub(crate) struct GetStacks;
+
+/// Get all stacks.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+///
+/// # Returns
+///
+/// * `Result<Json<Vec<LatencyResponse>>` - A JSON response containing a list of latency performance
+///   - `Ok(Json<Vec<LatencyResponse>>)` - Successfully retrieved latency performance
+///   - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve latency performance from state manager
+///
+/// # Example Response
+///
+/// Returns a JSON array of LatencyResponse objects for the specified hours
+/// ```json
+/// [
+///   {
+///      timestamp: "2024-03-21T12:00:00Z",
+///      latency: 123,
+///      requests: 2,
+///      time: 45
+///   }
+/// ]
+/// ```
+#[utoipa::path(
+  get,
+  path = "",
+  responses(
+      (status = OK, description = "Retrieves all latency performance", body = Value),
+      (status = INTERNAL_SERVER_ERROR, description = "Failed to get performance")
+  )
+)]
+#[instrument(level = "trace", skip_all)]
+async fn get_stacks(
+    State(proxy_service_state): State<ProxyServiceState>,
+) -> Result<Json<Vec<Stack>>> {
+    Ok(Json(
+        proxy_service_state
+            .atoma_state
+            .get_all_stacks()
             .await
             .map_err(|_| {
                 error!("Failed to get performance");
