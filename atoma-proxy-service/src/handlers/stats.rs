@@ -16,8 +16,8 @@ type Result<T> = std::result::Result<T, StatusCode>;
 pub(crate) const COMPUTE_UNITS_PROCESSED_PATH: &str = "/compute_units_processed";
 /// The path for the compute_units_processed endpoint.
 pub(crate) const LATENCY_PATH: &str = "/latency";
-/// The path for the get_stacks endpoint.
-pub(crate) const GET_STACKS_PATH: &str = "/get_stacks";
+/// The path for the get_all_stacks endpoint.
+pub(crate) const GET_ALL_STACKS_PATH: &str = "/get_all_stacks";
 
 /// Returns a router with the stats endpoint.
 ///
@@ -30,7 +30,7 @@ pub(crate) fn stats_router() -> Router<ProxyServiceState> {
             get(get_compute_units_processed),
         )
         .route(LATENCY_PATH, get(get_latency))
-        .route(GET_STACKS_PATH, get(get_stacks))
+        .route(GET_ALL_STACKS_PATH, get(get_all_stacks))
 }
 
 /// OpenAPI documentation for the get_compute_units_processed endpoint.
@@ -156,14 +156,14 @@ async fn get_latency(
     ))
 }
 
-/// OpenAPI documentation for the get_stacks endpoint.
+/// OpenAPI documentation for the get_all_stacks endpoint.
 ///
-/// This struct is used to generate OpenAPI documentation for the get_stacks
+/// This struct is used to generate OpenAPI documentation for the get_all_stacks
 /// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
 /// the OpenAPI specification from the code.
 #[derive(OpenApi)]
-#[openapi(paths(get_stacks))]
-pub(crate) struct GetStacks;
+#[openapi(paths(get_all_stacks))]
+pub(crate) struct GetAllStacks;
 
 /// Get all stacks.
 ///
@@ -199,7 +199,7 @@ pub(crate) struct GetStacks;
   )
 )]
 #[instrument(level = "trace", skip_all)]
-async fn get_stacks(
+async fn get_all_stacks(
     State(proxy_service_state): State<ProxyServiceState>,
 ) -> Result<Json<Vec<Stack>>> {
     Ok(Json(
