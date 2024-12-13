@@ -653,7 +653,7 @@ dependencies = [
 [[package]]
 name = "atoma-sui"
 version = "0.1.0"
-source = "git+https://github.com/atoma-network/atoma-node.git?branch=quick-fix#bb9f81762adc6ecad6f483c1e67ad77048b8998b"
+source = "git+https://github.com/atoma-network/atoma-node.git?branch=main#09089ecd68d2fc7928bc38fbd91ba536c1c4b926"
 dependencies = [
  "anyhow",
  "config",
