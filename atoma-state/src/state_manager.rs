@@ -1348,7 +1348,7 @@ impl AtomaState {
             num_compute_units = %stack.num_compute_units,
             price = %stack.price)
     )]
-    pub async fn insert_new_stack(&self, stack: Stack, created_at: DateTime<Utc>) -> Result<()> {
+    pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
                 (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages, created_at) 
@@ -1365,7 +1365,7 @@ impl AtomaState {
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
             .bind(stack.num_total_messages)
-            .bind(created_at)
+            .bind(stack.created_at)
             .execute(&self.db)
             .await?;
         Ok(())

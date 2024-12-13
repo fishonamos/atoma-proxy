@@ -141,10 +141,14 @@ pub struct Stack {
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
     pub num_total_messages: i64,
+    /// Created at timestamp
+    pub created_at: DateTime<Utc>,
+    /// Settled at timestamp
+    pub settled_at: Option<DateTime<Utc>>,
 }
 
-impl From<StackCreatedEvent> for Stack {
-    fn from(event: StackCreatedEvent) -> Self {
+impl From<(StackCreatedEvent, DateTime<Utc>)> for Stack {
+    fn from((event, created_at): (StackCreatedEvent, DateTime<Utc>)) -> Self {
         Stack {
             owner: event.owner,
             stack_id: event.stack_id,
@@ -157,6 +161,8 @@ impl From<StackCreatedEvent> for Stack {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
+            created_at,
+            settled_at: None,
         }
     }
 }

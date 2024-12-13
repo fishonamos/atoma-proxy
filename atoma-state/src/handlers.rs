@@ -391,12 +391,9 @@ pub(crate) async fn handle_stack_created_event(
         event = "handle-stack-created-event",
         "Stack selected current node, with id {node_small_id}, inserting new stack"
     );
-    let mut stack: Stack = event.into();
+    let mut stack: Stack = (event, created_at).into();
     stack.already_computed_units = already_computed_units;
-    state_manager
-        .state
-        .insert_new_stack(stack, created_at)
-        .await?;
+    state_manager.state.insert_new_stack(stack).await?;
     Ok(())
 }
 
