@@ -35,16 +35,12 @@ pub async fn handle_atoma_event(
             handle_node_task_unsubscription_event(state_manager, event).await
         }
         AtomaEvent::StackCreatedEvent((event, timestamp)) => {
-            if event.owner != state_manager.sui_address {
-                // Our stacks are handled on the creation event.
-                handle_stack_created_event(
-                    state_manager,
-                    event,
-                    0,
-                    timestamp_to_datetime_or_now(timestamp),
-                )
-                .await?;
-            }
+            handle_create_stack_stats(
+                state_manager,
+                event,
+                timestamp_to_datetime_or_now(timestamp),
+            )
+            .await?;
             Ok(())
         }
         AtomaEvent::StackCreateAndUpdateEvent(event) => {
@@ -383,7 +379,6 @@ pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
     already_computed_units: i64,
-    created_at: DateTime<Utc>,
 ) -> Result<()> {
     let node_small_id = event.selected_node_id.inner;
     trace!(
@@ -391,9 +386,42 @@ pub(crate) async fn handle_stack_created_event(
         event = "handle-stack-created-event",
         "Stack selected current node, with id {node_small_id}, inserting new stack"
     );
-    let mut stack: Stack = (event, created_at).into();
+    let mut stack: Stack = event.into();
     stack.already_computed_units = already_computed_units;
     state_manager.state.insert_new_stack(stack).await?;
+    Ok(())
+}
+
+/// Handles create stack for stats.
+///
+/// This function processes a stack created event by parsing the event data,
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations.
+/// * `event` - A `StackCreatedEvent` containing the details of the stack creation event.
+/// * `timestamp` - The timestamp of the event.
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the event was processed successfully, or an error if something went wrong.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The event data cannot be deserialized into a `StackCreatedEvent`.
+/// * The database operation to insert the new stack fails.
+///
+pub(crate) async fn handle_create_stack_stats(
+    state_manager: &AtomaStateManager,
+    event: StackCreatedEvent,
+    timestamp: DateTime<Utc>,
+) -> Result<()> {
+    let stack = event.into();
+    state_manager
+        .state
+        .new_stats_stack(stack, timestamp)
+        .await?;
     Ok(())
 }
 
@@ -860,15 +888,9 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::NewStackAcquired {
             event,
             already_computed_units,
-            transaction_timestamp,
+            transaction_timestamp: _,
         } => {
-            handle_stack_created_event(
-                state_manager,
-                event,
-                already_computed_units,
-                transaction_timestamp,
-            )
-            .await?;
+            handle_stack_created_event(state_manager, event, already_computed_units).await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
             timestamp,

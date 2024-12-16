@@ -45,8 +45,6 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period BOOLEAN NOT NULL,
     total_hash BYTEA NOT NULL,
     num_total_messages BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL,
-    settled_at TIMESTAMPTZ,
     FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
     FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
 );
@@ -172,3 +170,12 @@ CREATE TABLE IF NOT EXISTS stats_latency (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stats_latency ON stats_latency (timestamp);
+
+-- Create stacks table
+CREATE TABLE IF NOT EXISTS stats_stacks (
+    timestamp TIMESTAMPTZ PRIMARY KEY NOT NULL,
+    num_compute_units BIGINT NOT NULL,
+    settled_num_compute_units BIGINT NOT NULL,
+    CHECK (date_part('minute', timestamp) = 0 AND date_part('second', timestamp) = 0 AND date_part('milliseconds', timestamp) = 0)
+);
+

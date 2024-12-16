@@ -65,6 +65,21 @@ pub struct LatencyResponse {
     /// Total number of requests in that hour
     pub requests: i64,
 }
+
+/// Represents a stats stacks response
+/// This struct is used to represent the response for the get_stats_stacks endpoint.
+/// The timestamp of the stats stacks measurement. We measure the stats stacks on hourly basis. So the timestamp is the hour for which it is measured.
+/// The number of compute units is the total number of compute units in the system. The settled number of compute units is the total number of settled compute units in the system.
+///
+/// E.g. you have new stack for 10 compute units and stack settled with 5 settled compute units during the hour.
+/// The number of compute units will be 10 and the settled number of compute units will be 5.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct StatsStackResponse {
+    pub timestamp: DateTime<Utc>,
+    pub num_compute_units: i64,
+    pub settled_num_compute_units: i64,
+}
+
 /// Represents a task in the system
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Task {
@@ -141,14 +156,10 @@ pub struct Stack {
     pub total_hash: Vec<u8>,
     /// Number of payload requests that were received by the node for this stack.
     pub num_total_messages: i64,
-    /// Created at timestamp
-    pub created_at: DateTime<Utc>,
-    /// Settled at timestamp
-    pub settled_at: Option<DateTime<Utc>>,
 }
 
-impl From<(StackCreatedEvent, DateTime<Utc>)> for Stack {
-    fn from((event, created_at): (StackCreatedEvent, DateTime<Utc>)) -> Self {
+impl From<StackCreatedEvent> for Stack {
+    fn from(event: StackCreatedEvent) -> Self {
         Stack {
             owner: event.owner,
             stack_id: event.stack_id,
@@ -161,8 +172,6 @@ impl From<(StackCreatedEvent, DateTime<Utc>)> for Stack {
             in_settle_period: false,
             total_hash: vec![],
             num_total_messages: 0,
-            created_at,
-            settled_at: None,
         }
     }
 }

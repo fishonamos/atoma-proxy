@@ -2,7 +2,8 @@ use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, CheapestNode, ComputedUnitsProcessedResponse, LatencyResponse,
-    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task,
+    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, StatsStackResponse,
+    Task,
 };
 
 use atoma_sui::events::AtomaEvent;
@@ -632,14 +633,18 @@ impl AtomaState {
             .collect()
     }
 
-    /// Retrieves all stacks.
+    /// Get stacks created/settled for the last `last_hours` hours.
     ///
-    /// This method fetches all stack records from the `stacks` table.
+    /// This method fetches the stacks created/settled for the last `last_hours` hours from the `stats_stack` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `last_hours` - The number of hours to fetch the stacks stats.
     ///
     /// # Returns
     ///
-    /// - `Result<Vec<Stack>>`: A result containing either:
-    ///   - `Ok(Vec<Stack>)`: A vector of `Stack` objects representing all stacks.
+    /// - `Result<Vec<StatsStackResponse>>`: A result containing either:
+    ///   - `Ok(Vec<StatsStackResponse>)`: The stacks stats for the last `last_hours` hours.
     ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
     ///
     /// - The database query fails to execute.
@@ -649,18 +654,24 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn get_current_stacks(state_manager: &AtomaStateManager) -> Result<Vec<Stack>, AtomaStateManagerError> {
-    ///    state_manager.get_current_stacks().await
+    /// async fn get_current_stacks(state_manager: &AtomaStateManager) -> Result<Vec<StatsStackResponse>, AtomaStateManagerError> {
+    ///    state_manager.get_stats_stacks(5).await
     /// }
     /// ```
     #[instrument(level = "trace", skip_all)]
-    pub async fn get_all_stacks(&self) -> Result<Vec<Stack>> {
-        let stacks = sqlx::query("SELECT * FROM stacks")
-            .fetch_all(&self.db)
-            .await?;
-        stacks
+    pub async fn get_stats_stacks(&self, last_hours: usize) -> Result<Vec<StatsStackResponse>> {
+        let timestamp = Utc::now();
+        let start_timestamp = timestamp
+            .checked_sub_signed(chrono::Duration::hours(last_hours as i64))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        let stats_stacks =
+            sqlx::query("SELECT * FROM stats_stack WHERE timestamp >= $1 ORDER BY timestamp ASC")
+                .bind(start_timestamp)
+                .fetch_all(&self.db)
+                .await?;
+        stats_stacks
             .into_iter()
-            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .map(|stack| StatsStackResponse::from_row(&stack).map_err(AtomaStateManagerError::from))
             .collect()
     }
 
@@ -1351,8 +1362,8 @@ impl AtomaState {
     pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages, created_at) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
             .bind(stack.owner)
             .bind(stack.stack_small_id)
@@ -1365,7 +1376,6 @@ impl AtomaState {
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
             .bind(stack.num_total_messages)
-            .bind(stack.created_at)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -1646,12 +1656,20 @@ impl AtomaState {
         .execute(&mut *tx)
         .await?;
 
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
         // Also update the stack to set in_settle_period to true
         sqlx::query(
-            "UPDATE stacks SET in_settle_period = true, settled_at = $2 WHERE stack_small_id = $1",
+            "INSERT into stats_stack (timestamp,settled_num_compute_units) SET ($1,$2)
+             ON CONFLICT (timestamp) 
+             DO UPDATE SET 
+                settled_num_compute_units = stats_stack.settled_num_compute_units + EXCLUDED.settled_num_compute_units"
         )
-        .bind(stack_settlement_ticket.stack_small_id)
         .bind(timestamp)
+        .bind(stack_settlement_ticket.num_claimed_compute_units)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -3246,6 +3264,25 @@ impl AtomaState {
         )
         .bind(timestamp)
         .bind(latency)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn new_stats_stack(&self, stack: Stack, timestamp: DateTime<Utc>) -> Result<()> {
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        sqlx::query(
+            "INSERT into stats_stack (timestamp,num_compute_units) SET ($1,$2)
+                 ON CONFLICT (timestamp) 
+                 DO UPDATE SET 
+                    num_compute_units = stats_stack.num_compute_units + EXCLUDED.num_compute_units",
+        )
+        .bind(timestamp)
+        .bind(stack.num_compute_units)
         .execute(&self.db)
         .await?;
         Ok(())
