@@ -648,6 +648,8 @@ pub struct ChatCompletionMessage {
     pub name: Option<String>,
 }
 
+//TODO: Add support for streaming responses
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ChatCompletionResponse {
     /// A unique identifier for the chat completion.

@@ -143,14 +143,16 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/CreateEmbeddingRequest'
         required: true
       responses:
         '200':
           description: Embeddings generated successfully
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CreateEmbeddingResponse'
         '400':
           description: Bad request
         '401':
@@ -192,14 +194,16 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/CreateImageRequest'
         required: true
       responses:
         '200':
           description: Image generations
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CreateImageResponse'
         '400':
           description: Bad request
         '401':
@@ -536,6 +540,180 @@ components:
           type: integer
           format: int32
           description: Total number of tokens used (prompt + completion).
+    CreateEmbeddingRequest:
+      allOf:
+      - $ref: '#/components/schemas/EmbeddingInput'
+        description: |-
+          Input text to get embeddings for. Can be a string or array of strings.
+          Each input must not exceed the max input tokens for the model
+      - type: object
+        required:
+        - model
+        properties:
+          dimensions:
+            type:
+            - integer
+            - 'null'
+            format: int32
+            description: |-
+              The number of dimensions the resulting output embeddings should have.
+              Only supported in text-embedding-3 models.
+            minimum: 0
+          encoding_format:
+            type:
+            - string
+            - 'null'
+            description: |-
+              The format to return the embeddings in. Can be "float" or "base64".
+              Defaults to "float"
+          model:
+            type: string
+            description: ID of the model to use.
+          user:
+            type:
+            - string
+            - 'null'
+            description: A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
+      description: Request object for creating embeddings
+    CreateEmbeddingResponse:
+      type: object
+      description: Response object from creating embeddings
+      required:
+      - object
+      - model
+      - data
+      - usage
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingObject'
+          description: List of embedding objects
+        model:
+          type: string
+          description: The model used for generating embeddings
+        object:
+          type: string
+          description: The object type, which is always "list"
+        usage:
+          $ref: '#/components/schemas/EmbeddingUsage'
+          description: Usage statistics for the request
+    CreateImageRequest:
+      type: object
+      description: Request body for image generation
+      required:
+      - prompt
+      - model
+      - n
+      properties:
+        model:
+          type: string
+          description: The model to use for image generation.
+        n:
+          type: integer
+          format: int32
+          description: The number of images to generate. Must be between 1 and 10.
+          minimum: 0
+        prompt:
+          type: string
+          description: A text description of the desired image(s). The maximum length is 1000 characters.
+        quality:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The quality of the image that will be generated.
+            `hd` creates images with finer details and greater consistency across the image.
+        response_format:
+          type:
+          - string
+          - 'null'
+          description: The format in which the generated images are returned.
+        size:
+          type:
+          - string
+          - 'null'
+          description: The size of the generated images.
+        style:
+          type:
+          - string
+          - 'null'
+          description: The style of the generated images.
+        user:
+          type:
+          - string
+          - 'null'
+          description: A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
+    CreateImageResponse:
+      type: object
+      description: Response format for image generation
+      required:
+      - created
+      - data
+      properties:
+        created:
+          type: integer
+          format: int64
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageData'
+    EmbeddingInput:
+      oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
+      description: Input types for embeddings request
+    EmbeddingObject:
+      type: object
+      description: Individual embedding object in the response
+      required:
+      - object
+      - embedding
+      - index
+      properties:
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+          description: The embedding vector
+        index:
+          type: integer
+          description: Index of the embedding in the list of embeddings
+          minimum: 0
+        object:
+          type: string
+          description: The object type, which is always "embedding"
+    EmbeddingUsage:
+      type: object
+      description: Usage information for the embeddings request
+      required:
+      - prompt_tokens
+      - total_tokens
+      properties:
+        prompt_tokens:
+          type: integer
+          format: int32
+          description: Number of tokens in the prompt
+          minimum: 0
+        total_tokens:
+          type: integer
+          format: int32
+          description: Total tokens used in the request
+          minimum: 0
+    ImageData:
+      type: object
+      description: Individual image data in the response
+      required:
+      - revised_prompt
+      - url
+      properties:
+        revised_prompt:
+          type: string
+        url:
+          type: string
 tags:
 - name: Health
   description: Health check

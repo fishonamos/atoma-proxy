@@ -9,10 +9,11 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::types::chrono::{DateTime, Utc};
 use tracing::{error, instrument};
-use utoipa::OpenApi;
+use utoipa::{OpenApi, ToSchema};
 use x25519_dalek::PublicKey;
 
 use crate::server::{
@@ -54,7 +55,15 @@ pub struct RequestModelEmbeddings {
 
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]
-#[openapi(paths(embeddings_handler))]
+#[openapi(
+    paths(embeddings_handler),
+    components(schemas(
+        CreateEmbeddingRequest,
+        EmbeddingObject,
+        EmbeddingUsage,
+        CreateEmbeddingResponse
+    ))
+)]
 pub(crate) struct EmbeddingsOpenApi;
 
 impl RequestModel for RequestModelEmbeddings {
@@ -127,7 +136,7 @@ impl RequestModel for RequestModelEmbeddings {
     post,
     path = "",
     responses(
-        (status = OK, description = "Embeddings generated successfully", body = Value),
+        (status = OK, description = "Embeddings generated successfully", body = CreateEmbeddingResponse),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
@@ -145,7 +154,7 @@ pub async fn embeddings_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
-    Json(payload): Json<Value>,
+    Json(payload): Json<CreateEmbeddingRequest>,
 ) -> Result<Response<Body>, StatusCode> {
     let RequestMetadataExtension {
         node_address,
@@ -209,7 +218,7 @@ async fn handle_embeddings_response(
     node_address: String,
     selected_node_id: i64,
     headers: HeaderMap,
-    payload: Value,
+    payload: CreateEmbeddingRequest,
     num_input_compute_units: i64,
     endpoint: String,
     salt: Option<[u8; constants::SALT_SIZE]>,
@@ -267,4 +276,77 @@ async fn handle_embeddings_response(
         })?;
 
     Ok(Json(response).into_response())
+}
+
+/// Request object for creating embeddings
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateEmbeddingRequest {
+    /// ID of the model to use.
+    pub model: String,
+
+    /// Input text to get embeddings for. Can be a string or array of strings.
+    /// Each input must not exceed the max input tokens for the model
+    #[serde(flatten)]
+    pub input: EmbeddingInput,
+
+    /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+
+    /// The format to return the embeddings in. Can be "float" or "base64".
+    /// Defaults to "float"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding_format: Option<String>,
+
+    /// The number of dimensions the resulting output embeddings should have.
+    /// Only supported in text-embedding-3 models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<u32>,
+}
+
+/// Input types for embeddings request
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+/// Response object from creating embeddings
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateEmbeddingResponse {
+    /// The object type, which is always "list"
+    pub object: String,
+
+    /// The model used for generating embeddings
+    pub model: String,
+
+    /// List of embedding objects
+    pub data: Vec<EmbeddingObject>,
+
+    /// Usage statistics for the request
+    pub usage: EmbeddingUsage,
+}
+
+/// Individual embedding object in the response
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EmbeddingObject {
+    /// The object type, which is always "embedding"
+    pub object: String,
+
+    /// The embedding vector
+    pub embedding: Vec<f32>,
+
+    /// Index of the embedding in the list of embeddings
+    pub index: usize,
+}
+
+/// Usage information for the embeddings request
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EmbeddingUsage {
+    /// Number of tokens in the prompt
+    pub prompt_tokens: u32,
+
+    /// Total tokens used in the request
+    pub total_tokens: u32,
 }
