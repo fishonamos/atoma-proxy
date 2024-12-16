@@ -91,11 +91,6 @@ pub struct ProxyState {
     /// such as acquiring new stack entries.
     pub sui: Arc<RwLock<Sui>>,
 
-    /// The password for the atoma proxy service.
-    ///
-    /// This password is used to authenticate requests to the atoma proxy service.
-    pub password: String,
-
     /// Tokenizer used for processing text input.
     ///
     /// The tokenizer is responsible for breaking down text input into
@@ -536,7 +531,6 @@ pub async fn start_server(
     let proxy_state = ProxyState {
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
-        password: config.password,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
         secret_key: Arc::new(Zeroizing::new(secret_key)),

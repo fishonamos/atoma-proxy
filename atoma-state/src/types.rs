@@ -475,8 +475,6 @@ pub enum AtomaAtomaStateManagerEvent {
     },
     /// Checks if an API token is valid for a user
     IsApiTokenValid {
-        /// The user ID
-        user_id: i64,
         /// The API token
         api_token: String,
         /// Channel to send back the result

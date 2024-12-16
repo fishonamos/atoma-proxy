@@ -1,6 +1,12 @@
 # Builder stage
-FROM rust:1.83-slim-bullseye as builder
+FROM --platform=$BUILDPLATFORM rust:1.83-slim-bullseye AS builder
 
+# Add platform-specific arguments
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETARCH
+
+# Trace level argument
 ARG TRACE_LEVEL
 
 # Install build dependencies
@@ -15,11 +21,11 @@ WORKDIR /usr/src/atoma-proxy
 
 COPY . .
 
-# Build the application
+# Compile
 RUN RUST_LOG=${TRACE_LEVEL} cargo build --release --bin atoma-proxy
 
 # Final stage
-FROM debian:bullseye-slim
+FROM --platform=$TARGETPLATFORM debian:bullseye-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -36,9 +42,6 @@ RUN mkdir -p /app/logs
 # Copy the built binary from builder stage
 COPY --from=builder /usr/src/atoma-proxy/target/release/atoma-proxy /usr/local/bin/atoma-proxy
 
-# Copy configuration file
-COPY config.toml ./config.toml
-
 # Set executable permissions explicitly
 RUN chmod +x /usr/local/bin/atoma-proxy
 
@@ -49,5 +52,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Copy host client.yaml and modify keystore path
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Use full path in CMD
 CMD ["/usr/local/bin/atoma-proxy", "--config-path", "/app/config.toml"]
