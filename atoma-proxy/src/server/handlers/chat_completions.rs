@@ -28,6 +28,8 @@ use super::request_model::RequestModel;
 /// confidential processing (through AEAD encryption and TEE hardware).
 pub const CONFIDENTIAL_CHAT_COMPLETIONS_PATH: &str = "/v1/confidential/chat/completions";
 
+// TODO: Create a new endpoint for the confidential chat completions
+
 /// Path for the chat completions endpoint.
 ///
 /// This endpoint follows the OpenAI API format for chat completions

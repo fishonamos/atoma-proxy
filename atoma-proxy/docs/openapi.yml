@@ -68,7 +68,7 @@ paths:
   /v1/chat/completions:
     post:
       tags:
-      - Chat Completions
+      - Chat
       summary: Create chat completion
       description: |-
         This function processes chat completion requests by determining whether to use streaming
@@ -162,7 +162,7 @@ paths:
   /v1/images/generations:
     post:
       tags:
-      - Image Generations
+      - Images
       summary: Create image generation
       description: |-
         This endpoint processes requests to generate images using AI models by forwarding them
@@ -717,13 +717,13 @@ components:
 tags:
 - name: Health
   description: Health check
-- name: Chat Completions
-  description: Chat completions
+- name: Chat
+  description: OpenAI's API chat completions v1 endpoint
 - name: Models
-  description: Models
+  description: OpenAI's API models v1 endpoint
 - name: Node Public Address Registration
   description: Node public address registration
 - name: Embeddings
   description: OpenAI's API embeddings v1 endpoint
-- name: Image Generations
-  description: OpenAI's API image generations v1 endpoint
+- name: Images
+  description: OpenAI's API images v1 endpoint
