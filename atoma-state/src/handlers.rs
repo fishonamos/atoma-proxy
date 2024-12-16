@@ -120,11 +120,16 @@ pub async fn handle_atoma_event(
             )
             .await
         }
-        AtomaEvent::VerifyNodeSmallIdOwnership { 
+        AtomaEvent::VerifyNodeSmallIdOwnership {
             node_small_id,
             sui_address,
         } => {
-            handle_node_small_id_ownership_verification_event(state_manager, node_small_id, sui_address).await
+            handle_node_small_id_ownership_verification_event(
+                state_manager,
+                node_small_id,
+                sui_address,
+            )
+            .await
         }
     }
 }
