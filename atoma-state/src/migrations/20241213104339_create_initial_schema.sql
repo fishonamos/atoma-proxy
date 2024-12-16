@@ -179,3 +179,4 @@ CREATE TABLE IF NOT EXISTS stats_stacks (
     CHECK (date_part('minute', timestamp) = 0 AND date_part('second', timestamp) = 0 AND date_part('milliseconds', timestamp) = 0)
 );
 
+CREATE INDEX IF NOT EXISTS idx_stats_stacks ON stats_stacks (timestamp);
