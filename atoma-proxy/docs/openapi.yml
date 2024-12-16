@@ -98,14 +98,16 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
         required: true
       responses:
         '200':
           description: Chat completions
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
         '400':
           description: Bad request
         '401':
@@ -276,7 +278,264 @@ paths:
               schema: {}
         '500':
           description: Failed to retrieve list of available models
-components: {}
+components:
+  schemas:
+    ChatCompletionChoice:
+      type: object
+      required:
+      - index
+      - message
+      properties:
+        finish_reason:
+          type:
+          - string
+          - 'null'
+          description: The reason the chat completion was finished.
+        index:
+          type: integer
+          format: int32
+          description: The index of this choice in the list of choices.
+        logprobs:
+          description: Log probability information for the choice, if applicable.
+        message:
+          $ref: '#/components/schemas/ChatCompletionMessage'
+          description: The chat completion message.
+    ChatCompletionChunk:
+      type: object
+      required:
+      - id
+      - created
+      - model
+      - choices
+      properties:
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChunkChoice'
+          description: A list of chat completion chunk choices.
+        created:
+          type: integer
+          format: int64
+          description: The Unix timestamp (in seconds) of when the chunk was created.
+        id:
+          type: string
+          description: A unique identifier for the chat completion chunk.
+        model:
+          type: string
+          description: The model used for the chat completion.
+    ChatCompletionChunkChoice:
+      type: object
+      required:
+      - index
+      - delta
+      properties:
+        delta:
+          $ref: '#/components/schemas/ChatCompletionChunkDelta'
+          description: The chat completion delta message for streaming.
+        finish_reason:
+          type:
+          - string
+          - 'null'
+          description: The reason the chat completion was finished, if applicable.
+        index:
+          type: integer
+          format: int32
+          description: The index of this choice in the list of choices.
+    ChatCompletionChunkDelta:
+      type: object
+      properties:
+        content:
+          type:
+          - string
+          - 'null'
+          description: The content of the message, if present in this chunk.
+        function_call:
+          description: The function call information, if present in this chunk.
+        role:
+          type:
+          - string
+          - 'null'
+          description: The role of the message author, if present in this chunk.
+        tool_calls:
+          type:
+          - array
+          - 'null'
+          items: {}
+          description: The tool calls information, if present in this chunk.
+    ChatCompletionMessage:
+      type: object
+      required:
+      - role
+      - content
+      properties:
+        content:
+          type: string
+          description: The contents of the message
+        name:
+          type:
+          - string
+          - 'null'
+          description: The name of the author of this message
+        role:
+          type: string
+          description: 'The role of the message author. One of: "system", "user", "assistant", "tool", or "function"'
+    ChatCompletionRequest:
+      type: object
+      required:
+      - model
+      - messages
+      properties:
+        frequency_penalty:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            Number between -2.0 and 2.0. Positive values penalize new tokens based on their
+            existing frequency in the text so far
+        function_call:
+          description: Controls how the model responds to function calls
+        functions:
+          type:
+          - array
+          - 'null'
+          items: {}
+          description: A list of functions the model may generate JSON inputs for
+        logit_bias:
+          type:
+          - object
+          - 'null'
+          description: Modify the likelihood of specified tokens appearing in the completion
+          additionalProperties:
+            type: number
+            format: float
+          propertyNames:
+            type: string
+        max_tokens:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: The maximum number of tokens to generate in the chat completion
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionMessage'
+          description: A list of messages comprising the conversation so far
+        model:
+          type: string
+          description: ID of the model to use
+        n:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: How many chat completion choices to generate for each input message
+        presence_penalty:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: |-
+            Number between -2.0 and 2.0. Positive values penalize new tokens based on
+            whether they appear in the text so far
+        response_format:
+          description: The format to return the response in
+        seed:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: If specified, our system will make a best effort to sample deterministically
+        stop:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Up to 4 sequences where the API will stop generating further tokens
+        stream:
+          type:
+          - boolean
+          - 'null'
+          description: Whether to stream back partial progress
+        temperature:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: What sampling temperature to use, between 0 and 2
+        tool_choice:
+          description: Controls which (if any) tool the model should use
+        tools:
+          type:
+          - array
+          - 'null'
+          items: {}
+          description: A list of tools the model may call
+        top_p:
+          type:
+          - number
+          - 'null'
+          format: float
+          description: An alternative to sampling with temperature
+        user:
+          type:
+          - string
+          - 'null'
+          description: A unique identifier representing your end-user
+    ChatCompletionResponse:
+      type: object
+      required:
+      - id
+      - created
+      - model
+      - choices
+      properties:
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+          description: A list of chat completion choices.
+        created:
+          type: integer
+          format: int64
+          description: The Unix timestamp (in seconds) of when the chat completion was created.
+        id:
+          type: string
+          description: A unique identifier for the chat completion.
+        model:
+          type: string
+          description: The model used for the chat completion.
+        system_fingerprint:
+          type:
+          - string
+          - 'null'
+          description: The system fingerprint for the completion, if applicable.
+        usage:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/CompletionUsage'
+            description: Usage statistics for the completion request.
+    CompletionUsage:
+      type: object
+      required:
+      - prompt_tokens
+      - completion_tokens
+      - total_tokens
+      properties:
+        completion_tokens:
+          type: integer
+          format: int32
+          description: Number of tokens in the completion.
+        prompt_tokens:
+          type: integer
+          format: int32
+          description: Number of tokens in the prompt.
+        total_tokens:
+          type: integer
+          format: int32
+          description: Total number of tokens used (prompt + completion).
 tags:
 - name: Health
   description: Health check
