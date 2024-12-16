@@ -230,7 +230,12 @@ impl AtomaState {
     ///
     /// This function will return an error if the database query fails.
     #[instrument(level = "trace", skip_all, fields(%model, %free_units))]
-    pub async fn get_stacks_for_model(&self, model: &str, free_units: i64, is_confidential: bool) -> Result<Vec<Stack>> {
+    pub async fn get_stacks_for_model(
+        &self,
+        model: &str,
+        free_units: i64,
+        is_confidential: bool,
+    ) -> Result<Vec<Stack>> {
         let query = if is_confidential {
             "WITH selected_stack AS (
                 SELECT stacks.stack_small_id
@@ -246,7 +251,7 @@ impl AtomaState {
             SET already_computed_units = already_computed_units + $2
             WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
             RETURNING stacks.*"
-        } else { 
+        } else {
             "WITH selected_stack AS (
                 SELECT stacks.stack_small_id
                 FROM stacks
