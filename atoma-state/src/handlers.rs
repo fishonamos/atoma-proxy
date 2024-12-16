@@ -412,6 +412,7 @@ pub(crate) async fn handle_stack_created_event(
 /// * The event data cannot be deserialized into a `StackCreatedEvent`.
 /// * The database operation to insert the new stack fails.
 ///
+#[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_create_stack_stats(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,

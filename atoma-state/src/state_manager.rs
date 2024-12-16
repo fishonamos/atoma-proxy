@@ -3269,6 +3269,39 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Records statistics about a new stack in the database.
+    ///
+    /// This method inserts or updates hourly statistics about stack compute units in the `stats_stack` table.
+    /// The timestamp is rounded down to the nearest hour, and if an entry already exists for that hour,
+    /// the compute units are added to the existing total.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - The `Stack` object containing information about the new stack.
+    /// * `timestamp` - The timestamp when the stack was created.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The timestamp cannot be normalized to an hour boundary.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use chrono::{DateTime, Utc};
+    ///
+    /// async fn record_stack_stats(state_manager: &AtomaStateManager, stack: Stack) -> Result<(), AtomaStateManagerError> {
+    ///     let timestamp = Utc::now();
+    ///     state_manager.new_stats_stack(stack, timestamp).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn new_stats_stack(&self, stack: Stack, timestamp: DateTime<Utc>) -> Result<()> {
         let timestamp = timestamp
             .with_second(0)

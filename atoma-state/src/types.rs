@@ -9,20 +9,32 @@ use utoipa::ToSchema;
 
 use crate::state_manager::Result;
 
+/// Request payload for revoking an API token
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct RevokeApiTokenRequest {
+    /// The API token to be revoked
     pub api_token: String,
 }
 
+/// Request payload for user authentication
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct AuthRequest {
+    /// The user's unique identifier
     pub username: String,
+    /// The user's password
     pub password: String,
 }
 
+/// Response returned after successful authentication
+///
+/// Contains both an access token and a refresh token for implementing token-based authentication:
+/// - The access token is used to authenticate API requests
+/// - The refresh token is used to obtain new access tokens when they expire
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct AuthResponse {
+    /// JWT token used to authenticate API requests
     pub access_token: String,
+    /// Long-lived token used to obtain new access tokens
     pub refresh_token: String,
 }
 
