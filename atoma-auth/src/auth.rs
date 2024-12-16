@@ -14,6 +14,7 @@ use tracing::{error, instrument};
 
 use crate::AtomaAuthConfig;
 
+/// The length of the API token
 const API_TOKEN_LENGTH: usize = 30;
 
 /// The claims struct for the JWT token

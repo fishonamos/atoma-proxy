@@ -2,7 +2,8 @@ use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, CheapestNode, ComputedUnitsProcessedResponse, LatencyResponse,
-    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, Task,
+    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, StatsStackResponse,
+    Task,
 };
 
 use atoma_sui::events::AtomaEvent;
@@ -27,6 +28,8 @@ pub struct AtomaStateManager {
     pub event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
     /// Atoma service receiver
     pub state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+    /// Sui address
+    pub sui_address: String,
 }
 
 impl AtomaStateManager {
@@ -35,11 +38,13 @@ impl AtomaStateManager {
         db: PgPool,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        sui_address: String,
     ) -> Self {
         Self {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            sui_address,
         }
     }
 
@@ -51,6 +56,7 @@ impl AtomaStateManager {
         database_url: &str,
         event_subscriber_receiver: FlumeReceiver<AtomaEvent>,
         state_manager_receiver: FlumeReceiver<AtomaAtomaStateManagerEvent>,
+        sui_address: String,
     ) -> Result<Self> {
         let db = PgPool::connect(database_url).await?;
         // run migrations
@@ -59,6 +65,7 @@ impl AtomaStateManager {
             state: AtomaState::new(db),
             event_subscriber_receiver,
             state_manager_receiver,
+            sui_address,
         })
     }
 
@@ -230,7 +237,12 @@ impl AtomaState {
     ///
     /// This function will return an error if the database query fails.
     #[instrument(level = "trace", skip_all, fields(%model, %free_units))]
-    pub async fn get_stacks_for_model(&self, model: &str, free_units: i64) -> Result<Vec<Stack>> {
+    pub async fn get_stacks_for_model(
+        &self,
+        model: &str,
+        free_units: i64,
+        owner: String,
+    ) -> Result<Vec<Stack>> {
         // TODO: filter also by security level and other constraints
         let tasks = sqlx::query(
             "WITH selected_stack AS (
@@ -239,6 +251,7 @@ impl AtomaState {
                 INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
                 WHERE tasks.model_name = $1
                 AND stacks.num_compute_units - stacks.already_computed_units >= $2
+                AND stacks.owner = $3
                 LIMIT 1
             )
             UPDATE stacks
@@ -248,6 +261,7 @@ impl AtomaState {
         )
         .bind(model)
         .bind(free_units)
+        .bind(owner)
         .fetch_all(&self.db)
         .await?;
         tasks
@@ -616,6 +630,48 @@ impl AtomaState {
         stacks
             .into_iter()
             .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .collect()
+    }
+
+    /// Get stacks created/settled for the last `last_hours` hours.
+    ///
+    /// This method fetches the stacks created/settled for the last `last_hours` hours from the `stats_stack` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `last_hours` - The number of hours to fetch the stacks stats.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<StatsStackResponse>>`: A result containing either:
+    ///   - `Ok(Vec<StatsStackResponse>)`: The stacks stats for the last `last_hours` hours.
+    ///   - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_current_stacks(state_manager: &AtomaStateManager) -> Result<Vec<StatsStackResponse>, AtomaStateManagerError> {
+    ///    state_manager.get_stats_stacks(5).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub async fn get_stats_stacks(&self, last_hours: usize) -> Result<Vec<StatsStackResponse>> {
+        let timestamp = Utc::now();
+        let start_timestamp = timestamp
+            .checked_sub_signed(chrono::Duration::hours(last_hours as i64))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        let stats_stacks =
+            sqlx::query("SELECT * FROM stats_stack WHERE timestamp >= $1 ORDER BY timestamp ASC")
+                .bind(start_timestamp)
+                .fetch_all(&self.db)
+                .await?;
+        stats_stacks
+            .into_iter()
+            .map(|stack| StatsStackResponse::from_row(&stack).map_err(AtomaStateManagerError::from))
             .collect()
     }
 
@@ -1567,6 +1623,7 @@ impl AtomaState {
     pub async fn insert_new_stack_settlement_ticket(
         &self,
         stack_settlement_ticket: StackSettlementTicket,
+        timestamp: DateTime<Utc>,
     ) -> Result<()> {
         let mut tx = self.db.begin().await?;
         sqlx::query(
@@ -1599,11 +1656,22 @@ impl AtomaState {
         .execute(&mut *tx)
         .await?;
 
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
         // Also update the stack to set in_settle_period to true
-        sqlx::query("UPDATE stacks SET in_settle_period = true WHERE stack_small_id = $1")
-            .bind(stack_settlement_ticket.stack_small_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT into stats_stack (timestamp,settled_num_compute_units) SET ($1,$2)
+             ON CONFLICT (timestamp) 
+             DO UPDATE SET 
+                settled_num_compute_units = stats_stack.settled_num_compute_units + EXCLUDED.settled_num_compute_units"
+        )
+        .bind(timestamp)
+        .bind(stack_settlement_ticket.num_claimed_compute_units)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -3193,6 +3261,58 @@ impl AtomaState {
         )
         .bind(timestamp)
         .bind(latency)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Records statistics about a new stack in the database.
+    ///
+    /// This method inserts or updates hourly statistics about stack compute units in the `stats_stack` table.
+    /// The timestamp is rounded down to the nearest hour, and if an entry already exists for that hour,
+    /// the compute units are added to the existing total.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - The `Stack` object containing information about the new stack.
+    /// * `timestamp` - The timestamp when the stack was created.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute.
+    /// - The timestamp cannot be normalized to an hour boundary.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::{AtomaStateManager, Stack};
+    /// use chrono::{DateTime, Utc};
+    ///
+    /// async fn record_stack_stats(state_manager: &AtomaStateManager, stack: Stack) -> Result<(), AtomaStateManagerError> {
+    ///     let timestamp = Utc::now();
+    ///     state_manager.new_stats_stack(stack, timestamp).await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip(self))]
+    pub async fn new_stats_stack(&self, stack: Stack, timestamp: DateTime<Utc>) -> Result<()> {
+        let timestamp = timestamp
+            .with_second(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
+        sqlx::query(
+            "INSERT into stats_stack (timestamp,num_compute_units) SET ($1,$2)
+                 ON CONFLICT (timestamp) 
+                 DO UPDATE SET 
+                    num_compute_units = stats_stack.num_compute_units + EXCLUDED.num_compute_units",
+        )
+        .bind(timestamp)
+        .bind(stack.num_compute_units)
         .execute(&self.db)
         .await?;
         Ok(())

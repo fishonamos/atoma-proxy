@@ -419,7 +419,7 @@ pub async fn confidential_compute_middleware(
 pub(crate) mod auth {
     use std::sync::Arc;
 
-    use atoma_state::types::AtomaAtomaStateManagerEvent;
+    use atoma_state::{timestamp_to_datetime_or_now, types::AtomaAtomaStateManagerEvent};
     use axum::http::HeaderMap;
     use flume::Sender;
     use reqwest::{header::AUTHORIZATION, StatusCode};
@@ -691,6 +691,15 @@ pub(crate) mod auth {
             .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
                 model: model.to_string(),
                 free_compute_units: total_tokens as i64,
+                owner: sui
+                    .write()
+                    .await
+                    .get_wallet_address()
+                    .map_err(|e| {
+                        error!("Failed to get wallet address: {:?}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?
+                    .to_string(),
                 result_sender,
             })
             .map_err(|err| {
@@ -740,6 +749,7 @@ pub(crate) mod auth {
             let StackEntryResponse {
                 transaction_digest: tx_digest,
                 stack_created_event: event,
+                timestamp_ms,
             } = sui
                 .write()
                 .await
@@ -762,6 +772,7 @@ pub(crate) mod auth {
                 .send(AtomaAtomaStateManagerEvent::NewStackAcquired {
                     event,
                     already_computed_units: total_tokens as i64,
+                    transaction_timestamp: timestamp_to_datetime_or_now(timestamp_ms),
                 })
                 .map_err(|err| {
                     error!("Failed to send NewStackAcquired event: {:?}", err);
