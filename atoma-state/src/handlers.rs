@@ -739,6 +739,7 @@ pub(crate) async fn handle_state_manager_event(
             model,
             free_compute_units,
             result_sender,
+            is_confidential,
         } => {
             trace!(
                 target = "atoma-state-handlers",
@@ -749,7 +750,7 @@ pub(crate) async fn handle_state_manager_event(
             );
             let stacks = state_manager
                 .state
-                .get_stacks_for_model(&model, free_compute_units)
+                .get_stacks_for_model(&model, free_compute_units, is_confidential)
                 .await;
             result_sender
                 .send(stacks)
@@ -1057,7 +1058,10 @@ pub(crate) async fn handle_node_key_rotation_event(
         tee_remote_attestation_bytes,
     } = event;
     // TODO: We need to check that the
-    utils::verify_quote_v4_attestation(&tee_remote_attestation_bytes, &new_public_key).await?;
+    let is_valid =
+        utils::verify_quote_v4_attestation(&tee_remote_attestation_bytes, &new_public_key)
+            .await
+            .is_ok();
     state_manager
         .state
         .update_node_public_key(
@@ -1065,6 +1069,7 @@ pub(crate) async fn handle_node_key_rotation_event(
             epoch as i64,
             new_public_key,
             tee_remote_attestation_bytes,
+            is_valid,
         )
         .await?;
     Ok(())
@@ -1078,11 +1083,11 @@ mod utils {
     use dcap_qvl::verify::verify;
     use std::time::Duration;
 
-    /// The PCCS URL to obtain collateral for quote verification.
-    const PCCS_URL: &str = "https://pccs.intel.com/sgx/certification/v3/";
-
     /// The timeout to use for quote verification.
     const TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// The TCB update mode to use for quote verification.
+    const TCB_UPDATE_MODE: &str = "early";
 
     /// Verifies a TEE (Trusted Execution Environment) remote attestation quote using Intel's DCAP Quote Verification Library.
     ///
@@ -1131,15 +1136,22 @@ mod utils {
         quote_bytes: &[u8],
         new_public_key: &[u8],
     ) -> Result<()> {
-        let collateral = get_collateral(PCCS_URL, quote_bytes, TIMEOUT)
+        let quote = Quote::parse(&quote_bytes)
+            .map_err(|e| AtomaStateManagerError::FailedToParseQuote(format!("{e:?}")))?;
+        let fmspc = quote
+            .fmspc()
+            .map_err(|e| AtomaStateManagerError::FailedToRetrieveFmspc(format!("{e:?}")))?;
+        let certification_tcb_url = format!(
+            "https://api.trustedservices.intel.com/tdx/certification/v4/tcb?fmspc={:?}&update={TCB_UPDATE_MODE}",
+            fmspc
+        );
+        let collateral = get_collateral(&certification_tcb_url, quote_bytes, TIMEOUT)
             .await
             .map_err(|e| AtomaStateManagerError::FailedToRetrieveCollateral(format!("{e:?}")))?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| AtomaStateManagerError::UnixTimeWentBackwards(e.to_string()))?
             .as_secs() as u64;
-        let quote = Quote::parse(&quote_bytes)
-            .map_err(|e| AtomaStateManagerError::FailedToParseQuote(format!("{e:?}")))?;
         match quote.report {
             Report::SgxEnclave(_) => {
                 return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(

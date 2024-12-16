@@ -296,6 +296,7 @@ pub enum AtomaAtomaStateManagerEvent {
         model: String,
         free_compute_units: i64,
         result_sender: oneshot::Sender<Result<Vec<Stack>>>,
+        is_confidential: bool,
     },
     GetTasksForModel {
         model: String,

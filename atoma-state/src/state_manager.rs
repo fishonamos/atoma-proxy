@@ -230,9 +230,23 @@ impl AtomaState {
     ///
     /// This function will return an error if the database query fails.
     #[instrument(level = "trace", skip_all, fields(%model, %free_units))]
-    pub async fn get_stacks_for_model(&self, model: &str, free_units: i64) -> Result<Vec<Stack>> {
-        // TODO: filter also by security level and other constraints
-        let tasks = sqlx::query(
+    pub async fn get_stacks_for_model(&self, model: &str, free_units: i64, is_confidential: bool) -> Result<Vec<Stack>> {
+        let query = if is_confidential {
+            "WITH selected_stack AS (
+                SELECT stacks.stack_small_id
+                FROM stacks
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
+                INNER JOIN node_public_keys ON node_public_keys.node_small_id = stacks.node_small_id
+                WHERE tasks.model_name = $1
+                AND stacks.num_compute_units - stacks.already_computed_units >= $2
+                AND node_public_keys.is_valid = true
+                LIMIT 1
+            )
+            UPDATE stacks
+            SET already_computed_units = already_computed_units + $2
+            WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
+            RETURNING stacks.*"
+        } else { 
             "WITH selected_stack AS (
                 SELECT stacks.stack_small_id
                 FROM stacks
@@ -244,12 +258,14 @@ impl AtomaState {
             UPDATE stacks
             SET already_computed_units = already_computed_units + $2
             WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
-            RETURNING stacks.*",
-        )
-        .bind(model)
-        .bind(free_units)
-        .fetch_all(&self.db)
-        .await?;
+            RETURNING stacks.*"
+        };
+        // TODO: filter also by security level and other constraints
+        let tasks = sqlx::query(query)
+            .bind(model)
+            .bind(free_units)
+            .fetch_all(&self.db)
+            .await?;
         tasks
             .into_iter()
             .map(|task| Stack::from_row(&task).map_err(AtomaStateManagerError::from))
@@ -2620,18 +2636,21 @@ impl AtomaState {
         epoch: i64,
         new_public_key: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
+        is_valid: bool,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes) VALUES ($1, $2, $3, $4)
+            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (node_small_id)
                 DO UPDATE SET epoch = $2, 
                               public_key = $3, 
-                              tee_remote_attestation_bytes = $4",
+                              tee_remote_attestation_bytes = $4,
+                              is_valid = $5",
         )
         .bind(node_id)
         .bind(epoch)
         .bind(new_public_key)
         .bind(tee_remote_attestation_bytes)
+        .bind(is_valid)
         .execute(&self.db)
         .await?;
         Ok(())
@@ -3234,4 +3253,6 @@ pub enum AtomaStateManagerError {
     UnixTimeWentBackwards(String),
     #[error("Failed to retrieve collateral: `{0}`")]
     FailedToRetrieveCollateral(String),
+    #[error("Failed to retrieve fmspc: `{0}`")]
+    FailedToRetrieveFmspc(String),
 }

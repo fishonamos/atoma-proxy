@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS node_public_keys (
     epoch BIGINT NOT NULL,
     public_key BYTEA NOT NULL,
     tee_remote_attestation_bytes BYTEA NOT NULL,
+    is_valid BOOLEAN NOT NULL,
     FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 

@@ -487,6 +487,7 @@ pub(crate) mod auth {
         state: &ProxyState,
         headers: HeaderMap,
         payload: &Value,
+        is_confidential: bool,
     ) -> Result<ProcessedRequest, StatusCode> {
         // Authenticate
         if !check_auth(&state.password, &headers) {
@@ -507,6 +508,7 @@ pub(crate) mod auth {
             &state.state_manager_sender,
             &state.sui,
             total_compute_units,
+            is_confidential,
         )
         .await?;
 
@@ -659,6 +661,7 @@ pub(crate) mod auth {
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         sui: &Arc<RwLock<Sui>>,
         total_tokens: u64,
+        is_confidential: bool,
     ) -> Result<SelectedNodeMetadata, StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
 
@@ -667,6 +670,7 @@ pub(crate) mod auth {
                 model: model.to_string(),
                 free_compute_units: total_tokens as i64,
                 result_sender,
+                is_confidential,
             })
             .map_err(|err| {
                 error!("Failed to send GetStacksForModel event: {:?}", err);
@@ -825,6 +829,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
                 )
                 .await
             }
@@ -838,6 +843,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_EMBEDDINGS_PATH,
                 )
                 .await
             }
@@ -851,6 +857,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
                 )
                 .await
             }
