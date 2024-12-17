@@ -256,6 +256,8 @@ pub struct NodePublicAddressAssignment {
     node_small_id: u64,
     /// The public address of the node
     public_address: String,
+    /// The country of the node
+    country: String,
 }
 
 #[derive(OpenApi)]
@@ -398,6 +400,7 @@ pub async fn node_public_address_registration(
         .send(AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id: payload.node_small_id as i64,
             public_address: payload.public_address.clone(),
+            country: payload.country.clone(),
         })
         .map_err(|err| {
             error!("Failed to send UpsertNodePublicAddress event: {:?}", err);

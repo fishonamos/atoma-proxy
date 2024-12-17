@@ -838,16 +838,17 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id,
             public_address,
+            country,
         } => {
             trace!(
                 target = "atoma-state-handlers",
                 event = "handle-state-manager-event",
-                "Upserting public address for node with id: {}",
+                "Upserting public address/country for node with id: {}",
                 node_small_id
             );
             state_manager
                 .state
-                .update_node_public_address(node_small_id, public_address)
+                .update_node_public_address(node_small_id, public_address, country)
                 .await?;
         }
         AtomaAtomaStateManagerEvent::GetNodePublicAddress {
