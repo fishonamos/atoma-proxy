@@ -150,6 +150,160 @@ pub async fn chat_completions_handler(
     }
 }
 
+/// OpenAPI documentation structure for confidential chat completions endpoint.
+///
+/// This structure defines the OpenAPI (Swagger) documentation for the confidential chat completions
+/// API endpoint. It includes all the relevant request/response schemas and path definitions for
+/// secure, confidential chat interactions.
+///
+/// The confidential chat completions endpoint provides the same functionality as the regular
+/// chat completions endpoint but with additional encryption and security measures for
+/// sensitive data processing.
+///
+/// # Components
+///
+/// Includes schemas for:
+/// * `ChatCompletionRequest` - The structure of incoming chat completion requests
+/// * `ChatCompletionMessage` - Individual messages in the chat history
+/// * `ChatCompletionResponse` - The response format for completed requests
+/// * `ChatCompletionChoice` - Available completion choices in responses
+/// * `CompletionUsage` - Token usage statistics
+/// * `ChatCompletionChunk` - Streaming response chunks
+/// * `ChatCompletionChunkChoice` - Choices within streaming chunks
+/// * `ChatCompletionChunkDelta` - Incremental updates in streaming responses
+#[derive(OpenApi)]
+#[openapi(
+    paths(chat_completions_handler),
+    components(schemas(
+        ChatCompletionRequest,
+        ChatCompletionMessage,
+        ChatCompletionResponse,
+        ChatCompletionChoice,
+        CompletionUsage,
+        ChatCompletionChunk,
+        ChatCompletionChunkChoice,
+        ChatCompletionChunkDelta
+    ))
+)]
+pub(crate) struct ConfidentialChatCompletionsOpenApi;
+
+/// Create confidential chat completion
+///
+/// This handler processes chat completion requests in a confidential manner, providing additional
+/// encryption and security measures for sensitive data processing. It supports both streaming and
+/// non-streaming responses while maintaining data confidentiality through AEAD encryption and TEE hardware,
+/// for full private AI compute.
+///
+/// # Arguments
+///
+/// * `metadata` - Extension containing request metadata including:
+///   * `endpoint` - The API endpoint being accessed
+///   * `node_address` - Address of the inference node
+///   * `node_id` - Identifier of the selected node
+///   * `num_compute_units` - Available compute units
+///   * `selected_stack_small_id` - Stack identifier
+///   * `salt` - Optional salt for encryption
+///   * `node_x25519_public_key` - Optional public key for encryption
+///   * `model_name` - Name of the AI model being used
+/// * `state` - Shared application state (ProxyState)
+/// * `headers` - HTTP request headers
+/// * `payload` - The chat completion request body
+///
+/// # Returns
+///
+/// Returns a `Result` containing either:
+/// * An HTTP response with the chat completion result
+/// * A streaming SSE connection for real-time completions
+/// * A `StatusCode` error if the request processing fails
+///
+/// # Errors
+///
+/// Returns `StatusCode::BAD_REQUEST` if:
+/// * The 'stream' field is missing or invalid in the payload
+///
+/// Returns `StatusCode::INTERNAL_SERVER_ERROR` if:
+/// * The inference service request fails
+/// * Response processing encounters errors
+/// * State manager updates fail
+///
+/// # Security Features
+///
+/// * Utilizes AEAD encryption for request/response data
+/// * Supports TEE (Trusted Execution Environment) processing
+/// * Implements secure key exchange using X25519
+/// * Maintains confidentiality throughout the request lifecycle
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let response = confidential_chat_completions_handler(
+///     Extension(metadata),
+///     State(state),
+///     headers,
+///     Json(payload)
+/// ).await?;
+/// ```
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Confidential chat completions", body = ChatCompletionResponse),
+        (status = BAD_REQUEST, description = "Bad request"),
+        (status = UNAUTHORIZED, description = "Unauthorized"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(
+        path = metadata.endpoint,
+    )
+)]
+pub async fn confidential_chat_completions_handler(
+    Extension(metadata): Extension<RequestMetadataExtension>,
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+    Json(payload): Json<ChatCompletionRequest>,
+) -> Result<Response<Body>, StatusCode> {
+    let is_streaming = payload.stream.ok_or_else(|| {
+        error!("Missing or invalid 'stream' field");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    if is_streaming {
+        handle_streaming_response(
+            state,
+            metadata.node_address,
+            metadata.node_id,
+            headers,
+            payload,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
+            metadata.endpoint,
+            metadata.salt,
+            metadata.node_x25519_public_key,
+            metadata.model_name,
+        )
+        .await
+    } else {
+        handle_non_streaming_response(
+            state,
+            metadata.node_address,
+            metadata.node_id,
+            headers,
+            payload,
+            metadata.num_compute_units as i64,
+            metadata.selected_stack_small_id,
+            metadata.endpoint,
+            metadata.salt,
+            metadata.node_x25519_public_key,
+            metadata.model_name,
+        )
+        .await
+    }
+}
+
 /// Handles non-streaming chat completion requests by processing them through the inference service.
 ///
 /// This function performs several key operations:
