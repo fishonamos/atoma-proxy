@@ -379,6 +379,7 @@ pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
     already_computed_units: i64,
+    user_id: i64,
 ) -> Result<()> {
     let node_small_id = event.selected_node_id.inner;
     trace!(
@@ -388,7 +389,7 @@ pub(crate) async fn handle_stack_created_event(
     );
     let mut stack: Stack = event.into();
     stack.already_computed_units = already_computed_units;
-    state_manager.state.insert_new_stack(stack).await?;
+    state_manager.state.insert_new_stack(stack, user_id).await?;
     Ok(())
 }
 
@@ -785,6 +786,7 @@ pub(crate) async fn handle_state_manager_event(
             model,
             free_compute_units,
             owner,
+            user_id,
             result_sender,
         } => {
             trace!(
@@ -796,7 +798,7 @@ pub(crate) async fn handle_state_manager_event(
             );
             let stacks = state_manager
                 .state
-                .get_stacks_for_model(&model, free_compute_units, owner)
+                .get_stacks_for_model(&model, free_compute_units, owner, user_id)
                 .await;
             result_sender
                 .send(stacks)
@@ -891,8 +893,10 @@ pub(crate) async fn handle_state_manager_event(
             event,
             already_computed_units,
             transaction_timestamp: _,
+            user_id,
         } => {
-            handle_stack_created_event(state_manager, event, already_computed_units).await?;
+            handle_stack_created_event(state_manager, event, already_computed_units, user_id)
+                .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
             timestamp,
@@ -1022,9 +1026,9 @@ pub(crate) async fn handle_state_manager_event(
             api_token,
             result_sender,
         } => {
-            let is_valid = state_manager.state.is_api_token_valid(&api_token).await;
+            let user_id = state_manager.state.is_api_token_valid(&api_token).await;
             result_sender
-                .send(is_valid)
+                .send(user_id)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::StoreNewApiToken { user_id, api_token } => {
