@@ -41,9 +41,13 @@ use crate::server::handlers::{
 use crate::sui::Sui;
 
 use super::components;
-use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
-use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
-use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
+use super::handlers::chat_completions::{
+    confidential_chat_completions_handler, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+};
+use super::handlers::embeddings::{confidential_embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH};
+use super::handlers::image_generations::{
+    confidential_image_generations_handler, CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+};
 use super::middleware::{authenticate_middleware, confidential_compute_middleware};
 use super::AtomaServiceConfig;
 
@@ -90,11 +94,6 @@ pub struct ProxyState {
     /// enabling communication with the Sui service and handling Sui-related operations
     /// such as acquiring new stack entries.
     pub sui: Arc<RwLock<Sui>>,
-
-    /// The password for the atoma proxy service.
-    ///
-    /// This password is used to authenticate requests to the atoma proxy service.
-    pub password: String,
 
     /// Tokenizer used for processing text input.
     ///
@@ -261,6 +260,8 @@ pub struct NodePublicAddressAssignment {
     node_small_id: u64,
     /// The public address of the node
     public_address: String,
+    /// The country of the node
+    country: String,
 }
 
 #[derive(OpenApi)]
@@ -403,6 +404,7 @@ pub async fn node_public_address_registration(
         .send(AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id: payload.node_small_id as i64,
             public_address: payload.public_address.clone(),
+            country: payload.country.clone(),
         })
         .map_err(|err| {
             error!("Failed to send UpsertNodePublicAddress event: {:?}", err);
@@ -471,12 +473,15 @@ pub fn create_router(state: ProxyState) -> Router {
     let confidential_router = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
-            post(chat_completions_create),
+            post(confidential_chat_completions_handler),
         )
-        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_create))
+        .route(
+            CONFIDENTIAL_EMBEDDINGS_PATH,
+            post(confidential_embeddings_handler),
+        )
         .route(
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
-            post(image_generations_create),
+            post(confidential_image_generations_handler),
         )
         .layer(
             ServiceBuilder::new()
@@ -536,7 +541,6 @@ pub async fn start_server(
     let proxy_state = ProxyState {
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
-        password: config.password,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
         secret_key: Arc::new(Zeroizing::new(secret_key)),

@@ -59,7 +59,7 @@ pub struct RequestModelImageGenerations {
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(image_generations_create),
+    paths(image_generations_handler),
     components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
 )]
 pub(crate) struct ImageGenerationsOpenApi;
@@ -151,12 +151,75 @@ impl RequestModel for RequestModelImageGenerations {
 #[instrument(
     level = "info",
     skip_all,
-    fields(
-        endpoint = metadata.endpoint,
-        payload = ?payload,
-    )
+    fields(endpoint = metadata.endpoint)
 )]
 pub async fn image_generations_create(
+    Extension(metadata): Extension<RequestMetadataExtension>,
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateImageRequest>,
+) -> Result<Response<Body>, StatusCode> {
+    handle_image_generation_response(
+        state,
+        metadata.node_address,
+        metadata.node_id,
+        headers,
+        payload,
+        metadata.num_compute_units as i64,
+        metadata.endpoint,
+        metadata.salt,
+        metadata.node_x25519_public_key,
+        metadata.model_name,
+    )
+    .await
+}
+
+/// OpenAPI documentation for the image generations endpoint.
+#[derive(OpenApi)]
+#[openapi(
+    paths(image_generations_handler),
+    components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
+)]
+pub(crate) struct ConfidentialImageGenerationsOpenApi;
+
+/// Create confidential image generations
+///
+/// This endpoint follows the OpenAI API format for generating images,
+/// but with confidential processing (through AEAD encryption and TEE hardware).
+/// The handler receives pre-processed metadata from middleware and forwards the request to
+/// the selected node.
+///
+/// Note: Authentication, node selection, initial request validation and encryption
+/// are handled by middleware before this handler is called.
+///
+/// # Arguments
+/// * `metadata` - Pre-processed request metadata containing node information and compute units
+/// * `state` - The shared proxy state containing configuration and runtime information
+/// * `headers` - HTTP headers from the incoming request
+/// * `payload` - The JSON request body containing the model and input text
+///
+/// # Returns
+/// * `Ok(Response)` - The image generations response from the processing node
+/// * `Err(StatusCode)` - An error status code if any step fails
+///
+/// # Errors
+/// * `INTERNAL_SERVER_ERROR` - Processing or node communication failures
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Image generations", body = CreateImageResponse),
+        (status = BAD_REQUEST, description = "Bad request"),
+        (status = UNAUTHORIZED, description = "Unauthorized"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(endpoint = metadata.endpoint)
+)]
+pub async fn confidential_image_generations_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,

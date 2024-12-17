@@ -727,10 +727,3 @@ tags:
   description: OpenAI's API embeddings v1 endpoint
 - name: Images
   description: OpenAI's API images v1 endpoint
-x-speakeasy-name-override:
-- operationId: chat_completions_create
-  methodNameOverride: create
-- operationId: embeddings_create
-  methodNameOverride: create
-- operationId: image_generations_create
-  methodNameOverride: generate

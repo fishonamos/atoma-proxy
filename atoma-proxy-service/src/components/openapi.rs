@@ -13,7 +13,11 @@ use crate::{
             REGISTER_PATH, REVOKE_API_TOKEN_PATH,
         },
         stacks::{GetCurrentStacksOpenApi, GET_STACKS_PATH},
-        stats::{GetComputeUnitsProcessed, GetLatency, COMPUTE_UNITS_PROCESSED_PATH, LATENCY_PATH},
+        stats::{
+            GetComputeUnitsProcessed, GetLatency, GetNodeDistribution, GetStatsStacks,
+            COMPUTE_UNITS_PROCESSED_PATH, GET_NODES_DISTRIBUTION_PATH, GET_STATS_STACKS_PATH,
+            LATENCY_PATH,
+        },
         subscriptions::{GetAllSubscriptionsOpenApi, SUBSCRIPTIONS_PATH},
         tasks::{GetAllTasksOpenApi, TASKS_PATH},
     },
@@ -35,7 +39,9 @@ pub fn openapi_router() -> Router {
             (path = TASKS_PATH, api = GetAllTasksOpenApi, tags = ["Tasks"]),
             (path = COMPUTE_UNITS_PROCESSED_PATH, api = GetComputeUnitsProcessed, tags = ["Stats"]),
             (path = LATENCY_PATH, api = GetLatency, tags = ["Stats"]),
+            (path = GET_STATS_STACKS_PATH, api = GetStatsStacks, tags = ["Stats"]),
             (path = SUBSCRIPTIONS_PATH, api = GetAllSubscriptionsOpenApi, tags = ["Subscriptions"]),
+            (path = GET_NODES_DISTRIBUTION_PATH, api = GetNodeDistribution, tags = ["Stats"]),
         ),
         tags(
             (name = "Health", description = "Health check endpoints"),

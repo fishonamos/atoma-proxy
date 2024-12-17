@@ -419,7 +419,7 @@ pub async fn confidential_compute_middleware(
 pub(crate) mod auth {
     use std::sync::Arc;
 
-    use atoma_state::types::AtomaAtomaStateManagerEvent;
+    use atoma_state::{timestamp_to_datetime_or_now, types::AtomaAtomaStateManagerEvent};
     use axum::http::HeaderMap;
     use flume::Sender;
     use reqwest::{header::AUTHORIZATION, StatusCode};
@@ -459,7 +459,7 @@ pub(crate) mod auth {
     ///
     /// # Arguments
     ///
-    /// * `state` - The proxy state containing password, models, and other shared state
+    /// * `state` - The proxy state containing models, and other shared state
     /// * `headers` - Request headers containing authorization
     /// * `payload` - Request payload containing model and token information
     ///
@@ -489,9 +489,7 @@ pub(crate) mod auth {
         payload: &Value,
     ) -> Result<ProcessedRequest, StatusCode> {
         // Authenticate
-        if !check_auth(&state.state_manager_sender, &headers).await? {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+        let user_id = check_auth(&state.state_manager_sender, &headers).await?;
 
         // Estimate compute units and the request model
         let model = request_model.get_model()?;
@@ -507,6 +505,7 @@ pub(crate) mod auth {
             &state.state_manager_sender,
             &state.sui,
             total_compute_units,
+            user_id,
         )
         .await?;
 
@@ -567,11 +566,11 @@ pub(crate) mod auth {
     /// Checks the authentication of the request.
     ///
     /// This function checks the authentication of the request by comparing the
-    /// provided password with the `Authorization` header in the request.
+    /// provided Bearer token from the `Authorization` header against the stored tokens.
     ///
     /// # Arguments
     ///
-    /// * `password`: The password to check against.
+    /// * `state_manager_sender`: The sender for the state manager channel.
     /// * `headers`: The headers of the request.
     ///
     /// # Returns
@@ -595,7 +594,7 @@ pub(crate) mod auth {
     async fn check_auth(
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         headers: &HeaderMap,
-    ) -> Result<bool, StatusCode> {
+    ) -> Result<i64, StatusCode> {
         if let Some(auth) = headers.get("Authorization") {
             if let Ok(auth) = auth.to_str() {
                 if let Some(token) = auth.strip_prefix("Bearer ") {
@@ -622,8 +621,8 @@ pub(crate) mod auth {
                 }
             }
         }
-        error!("Invalid or missing password for request");
-        Ok(false)
+        error!("Invalid or missing api token for request");
+        Err(StatusCode::UNAUTHORIZED)
     }
 
     /// Metadata returned when selecting a node for processing a model request
@@ -684,6 +683,7 @@ pub(crate) mod auth {
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         sui: &Arc<RwLock<Sui>>,
         total_tokens: u64,
+        user_id: i64,
     ) -> Result<SelectedNodeMetadata, StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
 
@@ -691,6 +691,16 @@ pub(crate) mod auth {
             .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
                 model: model.to_string(),
                 free_compute_units: total_tokens as i64,
+                owner: sui
+                    .write()
+                    .await
+                    .get_wallet_address()
+                    .map_err(|e| {
+                        error!("Failed to get wallet address: {:?}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?
+                    .to_string(),
+                user_id,
                 result_sender,
             })
             .map_err(|err| {
@@ -740,6 +750,7 @@ pub(crate) mod auth {
             let StackEntryResponse {
                 transaction_digest: tx_digest,
                 stack_created_event: event,
+                timestamp_ms,
             } = sui
                 .write()
                 .await
@@ -762,6 +773,8 @@ pub(crate) mod auth {
                 .send(AtomaAtomaStateManagerEvent::NewStackAcquired {
                     event,
                     already_computed_units: total_tokens as i64,
+                    transaction_timestamp: timestamp_to_datetime_or_now(timestamp_ms),
+                    user_id,
                 })
                 .map_err(|err| {
                     error!("Failed to send NewStackAcquired event: {:?}", err);
