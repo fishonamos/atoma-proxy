@@ -489,9 +489,7 @@ pub(crate) mod auth {
         payload: &Value,
     ) -> Result<ProcessedRequest, StatusCode> {
         // Authenticate
-        if !check_auth(&state.state_manager_sender, &headers).await? {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+        let user_id = check_auth(&state.state_manager_sender, &headers).await?;
 
         // Estimate compute units and the request model
         let model = request_model.get_model()?;
@@ -507,6 +505,7 @@ pub(crate) mod auth {
             &state.state_manager_sender,
             &state.sui,
             total_compute_units,
+            user_id,
         )
         .await?;
 
@@ -595,7 +594,7 @@ pub(crate) mod auth {
     async fn check_auth(
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         headers: &HeaderMap,
-    ) -> Result<bool, StatusCode> {
+    ) -> Result<i64, StatusCode> {
         if let Some(auth) = headers.get("Authorization") {
             if let Ok(auth) = auth.to_str() {
                 if let Some(token) = auth.strip_prefix("Bearer ") {
@@ -623,7 +622,7 @@ pub(crate) mod auth {
             }
         }
         error!("Invalid or missing password for request");
-        Ok(false)
+        Err(StatusCode::UNAUTHORIZED)
     }
 
     /// Metadata returned when selecting a node for processing a model request
@@ -684,6 +683,7 @@ pub(crate) mod auth {
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         sui: &Arc<RwLock<Sui>>,
         total_tokens: u64,
+        user_id: i64,
     ) -> Result<SelectedNodeMetadata, StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
 
@@ -700,6 +700,7 @@ pub(crate) mod auth {
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?
                     .to_string(),
+                user_id,
                 result_sender,
             })
             .map_err(|err| {
@@ -773,6 +774,7 @@ pub(crate) mod auth {
                     event,
                     already_computed_units: total_tokens as i64,
                     transaction_timestamp: timestamp_to_datetime_or_now(timestamp_ms),
+                    user_id,
                 })
                 .map_err(|err| {
                     error!("Failed to send NewStackAcquired event: {:?}", err);

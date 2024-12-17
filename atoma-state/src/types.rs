@@ -327,6 +327,8 @@ pub enum AtomaAtomaStateManagerEvent {
         free_compute_units: i64,
         /// The owner/public key of the stacks to filter by
         owner: String,
+        /// The user id of the stacks to filter by
+        user_id: i64,
         /// Channel to send back the list of matching stacks
         /// Returns Ok(Vec<Stack>) with matching stacks or an error if the query fails
         result_sender: oneshot::Sender<Result<Vec<Stack>>>,
@@ -378,6 +380,8 @@ pub enum AtomaAtomaStateManagerEvent {
         already_computed_units: i64,
         /// Timestamp of the transaction that created the stack
         transaction_timestamp: DateTime<Utc>,
+        /// User id of the stack owner (referencing local user table)
+        user_id: i64,
     },
     /// Records statistics about a node's throughput performance
     UpdateNodeThroughputPerformance {
@@ -479,7 +483,7 @@ pub enum AtomaAtomaStateManagerEvent {
         api_token: String,
         /// Channel to send back the result
         /// Returns Ok(bool) with true if the API token is valid or false if it is not
-        result_sender: oneshot::Sender<Result<bool>>,
+        result_sender: oneshot::Sender<Result<i64>>,
     },
     /// Revokes an API token for a user
     RevokeApiToken {

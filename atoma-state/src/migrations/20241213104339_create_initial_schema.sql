@@ -32,6 +32,27 @@ CREATE TABLE IF NOT EXISTS node_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id ON node_subscriptions (task_small_id, node_small_id);
 
+-- Create users and auth tables
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(64) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    token_hash VARCHAR(255) UNIQUE NOT NULL,
+    user_id BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    user_id BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
 -- Create stacks table
 CREATE TABLE IF NOT EXISTS stacks (
     stack_small_id BIGINT PRIMARY KEY,
@@ -45,7 +66,9 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period BOOLEAN NOT NULL,
     total_hash BYTEA NOT NULL,
     num_total_messages BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
     FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
+    FOREIGN KEY (user_id) REFERENCES users (id),
     FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
 );
 
@@ -126,27 +149,6 @@ CREATE TABLE IF NOT EXISTS node_public_keys (
     FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
--- Create users and auth tables
-CREATE TABLE IF NOT EXISTS users (
-    id BIGSERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash VARCHAR(64) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS refresh_tokens (
-    id BIGSERIAL PRIMARY KEY,
-    token_hash VARCHAR(255) UNIQUE NOT NULL,
-    user_id BIGINT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-);
-
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id BIGSERIAL PRIMARY KEY,
-    token VARCHAR(255) UNIQUE NOT NULL,
-    user_id BIGINT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-);
-
 -- Create stats tables
 CREATE TABLE IF NOT EXISTS stats_compute_units_processed (
     id BIGSERIAL PRIMARY KEY,
@@ -171,7 +173,7 @@ CREATE TABLE IF NOT EXISTS stats_latency (
 
 CREATE INDEX IF NOT EXISTS idx_stats_latency ON stats_latency (timestamp);
 
--- Create stacks table
+-- Create stats_stacks table
 CREATE TABLE IF NOT EXISTS stats_stacks (
     timestamp TIMESTAMPTZ PRIMARY KEY NOT NULL,
     num_compute_units BIGINT NOT NULL,
