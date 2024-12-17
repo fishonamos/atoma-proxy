@@ -59,7 +59,7 @@ pub struct RequestModelImageGenerations {
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(image_generations_handler),
+    paths(image_generations_create),
     components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
 )]
 pub(crate) struct ImageGenerationsOpenApi;
@@ -156,7 +156,7 @@ impl RequestModel for RequestModelImageGenerations {
         payload = ?payload,
     )
 )]
-pub async fn image_generations_handler(
+pub async fn image_generations_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,

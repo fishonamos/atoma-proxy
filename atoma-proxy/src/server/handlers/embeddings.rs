@@ -56,7 +56,7 @@ pub struct RequestModelEmbeddings {
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(embeddings_handler),
+    paths(embeddings_create),
     components(schemas(
         CreateEmbeddingRequest,
         EmbeddingObject,
@@ -150,7 +150,7 @@ impl RequestModel for RequestModelEmbeddings {
         payload = ?payload,
     )
 )]
-pub async fn embeddings_handler(
+pub async fn embeddings_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,

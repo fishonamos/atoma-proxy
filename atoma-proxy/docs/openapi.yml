@@ -94,7 +94,7 @@ paths:
         - The request processing fails
         - The streaming/non-streaming handlers encounter errors
         - The underlying inference service returns an error
-      operationId: chat_completions_handler
+      operationId: chat_completions_create
       requestBody:
         content:
           application/json:
@@ -139,7 +139,7 @@ paths:
 
         # Errors
         * `INTERNAL_SERVER_ERROR` - Processing or node communication failures
-      operationId: embeddings_handler
+      operationId: embeddings_create
       requestBody:
         content:
           application/json:
@@ -190,7 +190,7 @@ paths:
             "size": "1024x1024"
         }
         ```
-      operationId: image_generations_handler
+      operationId: image_generations_create
       requestBody:
         content:
           application/json:
