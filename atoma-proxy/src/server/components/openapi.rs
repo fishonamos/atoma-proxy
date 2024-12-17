@@ -1,7 +1,17 @@
 use axum::Router;
-use utoipa::OpenApi;
+use serde_json::json;
+use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::server::handlers::chat_completions::{
+    ConfidentialChatCompletionsOpenApi, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+};
+use crate::server::handlers::embeddings::{
+    ConfidentialEmbeddingsOpenApi, CONFIDENTIAL_EMBEDDINGS_PATH,
+};
+use crate::server::handlers::image_generations::{
+    ConfidentialImageGenerationsOpenApi, CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+};
 use crate::server::handlers::{
     chat_completions::ChatCompletionsOpenApi, chat_completions::CHAT_COMPLETIONS_PATH,
     embeddings::EmbeddingsOpenApi, embeddings::EMBEDDINGS_PATH,
@@ -15,27 +25,75 @@ use crate::server::http_server::{
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
+        modifiers(&SpeakeasyExtension),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi, tags = ["Health"]),
             (path = MODELS_PATH, api = ModelsOpenApi, tags = ["Models"]),
             (path = NODE_PUBLIC_ADDRESS_REGISTRATION_PATH, api = NodePublicAddressRegistrationOpenApi, tags = ["Node Public Address Registration"]),
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi, tags = ["Chat"]),
+            (path = CONFIDENTIAL_CHAT_COMPLETIONS_PATH, api = ConfidentialChatCompletionsOpenApi, tags = ["Confidential Chat"]),
             (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi, tags = ["Embeddings"]),
+            (path = CONFIDENTIAL_EMBEDDINGS_PATH, api = ConfidentialEmbeddingsOpenApi, tags = ["Confidential Embeddings"]),
             (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi, tags = ["Images"]),
+            (path = CONFIDENTIAL_IMAGE_GENERATIONS_PATH, api = ConfidentialImageGenerationsOpenApi, tags = ["Confidential Images"]),
         ),
         tags(
             (name = "Health", description = "Health check"),
             (name = "Chat", description = "OpenAI's API chat completions v1 endpoint"),
+            (name = "Confidential Chat", description = "Atoma's API confidential chat completions v1 endpoint"),
             (name = "Models", description = "OpenAI's API models v1 endpoint"),
             (name = "Node Public Address Registration", description = "Node public address registration"),
             (name = "Embeddings", description = "OpenAI's API embeddings v1 endpoint"),
+            (name = "Confidential Embeddings", description = "Atoma's API confidential embeddings v1 endpoint"),
             (name = "Images", description = "OpenAI's API images v1 endpoint"),
+            (name = "Confidential Images", description = "Atoma's API confidential images v1 endpoint")
         ),
         servers(
             (url = "http://localhost:8080"),
         )
     )]
     struct ApiDoc;
+
+    #[derive(Default)]
+    struct SpeakeasyExtension;
+
+    impl Modify for SpeakeasyExtension {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            // Create new Extensions if none exist
+            let extensions = openapi.extensions.get_or_insert_with(Default::default);
+
+            // Add the x-speakeasy-name-override
+            extensions.insert(
+                "x-speakeasy-name-override".to_string(),
+                json!([
+                    {
+                        "operationId": "chat_completions_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
+                        "operationId": "confidential_chat_completions_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
+                        "operationId": "embeddings_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
+                        "operationId": "confidential_embeddings_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
+                        "operationId": "image_generations_create",
+                        "methodNameOverride": "generate"
+                    },
+                    {
+                        "operationId": "confidential_image_generations_create",
+                        "methodNameOverride": "generate"
+                    }
+                ]),
+            );
+        }
+    }
 
     // Generate the OpenAPI spec and write it to a file
     #[cfg(debug_assertions)]

@@ -34,16 +34,20 @@ pub use components::openapi::openapi_routes;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::server::handlers::{
-    chat_completions::chat_completions_handler, chat_completions::CHAT_COMPLETIONS_PATH,
-    embeddings::embeddings_handler, embeddings::EMBEDDINGS_PATH,
-    image_generations::image_generations_handler, image_generations::IMAGE_GENERATIONS_PATH,
+    chat_completions::chat_completions_create, chat_completions::CHAT_COMPLETIONS_PATH,
+    embeddings::embeddings_create, embeddings::EMBEDDINGS_PATH,
+    image_generations::image_generations_create, image_generations::IMAGE_GENERATIONS_PATH,
 };
 use crate::sui::Sui;
 
 use super::components;
-use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
-use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
-use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
+use super::handlers::chat_completions::{
+    confidential_chat_completions_create, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+};
+use super::handlers::embeddings::{confidential_embeddings_create, CONFIDENTIAL_EMBEDDINGS_PATH};
+use super::handlers::image_generations::{
+    confidential_image_generations_create, CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+};
 use super::middleware::{authenticate_middleware, confidential_compute_middleware};
 use super::AtomaServiceConfig;
 
@@ -469,12 +473,15 @@ pub fn create_router(state: ProxyState) -> Router {
     let confidential_router = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
-            post(chat_completions_handler),
+            post(confidential_chat_completions_create),
         )
-        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(
+            CONFIDENTIAL_EMBEDDINGS_PATH,
+            post(confidential_embeddings_create),
+        )
         .route(
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
-            post(image_generations_handler),
+            post(confidential_image_generations_create),
         )
         .layer(
             ServiceBuilder::new()
@@ -487,9 +494,9 @@ pub fn create_router(state: ProxyState) -> Router {
         .with_state(state.clone());
 
     Router::new()
-        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_handler))
-        .route(EMBEDDINGS_PATH, post(embeddings_handler))
-        .route(IMAGE_GENERATIONS_PATH, post(image_generations_handler))
+        .route(CHAT_COMPLETIONS_PATH, post(chat_completions_create))
+        .route(EMBEDDINGS_PATH, post(embeddings_create))
+        .route(IMAGE_GENERATIONS_PATH, post(image_generations_create))
         .layer(
             ServiceBuilder::new()
                 .layer(from_fn_with_state(state.clone(), authenticate_middleware))

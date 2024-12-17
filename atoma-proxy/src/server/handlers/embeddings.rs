@@ -56,7 +56,7 @@ pub struct RequestModelEmbeddings {
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(embeddings_handler),
+    paths(embeddings_create),
     components(schemas(
         CreateEmbeddingRequest,
         EmbeddingObject,
@@ -145,12 +145,86 @@ impl RequestModel for RequestModelEmbeddings {
 #[instrument(
     level = "info",
     skip_all,
-    fields(
-        endpoint = metadata.endpoint,
-        payload = ?payload,
+    fields(endpoint = metadata.endpoint)
+)]
+pub async fn embeddings_create(
+    Extension(metadata): Extension<RequestMetadataExtension>,
+    State(state): State<ProxyState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateEmbeddingRequest>,
+) -> Result<Response<Body>, StatusCode> {
+    let RequestMetadataExtension {
+        node_address,
+        node_id,
+        num_compute_units: num_input_compute_units,
+        ..
+    } = metadata;
+    handle_embeddings_response(
+        state,
+        node_address,
+        node_id,
+        headers,
+        payload,
+        num_input_compute_units as i64,
+        metadata.endpoint,
+        metadata.salt,
+        metadata.node_x25519_public_key,
+        metadata.model_name,
+    )
+    .await
+}
+
+/// Atoma's confidential embeddings OpenAPI documentation.
+#[derive(OpenApi)]
+#[openapi(
+    paths(confidential_embeddings_create),
+    components(schemas(
+        CreateEmbeddingRequest,
+        EmbeddingObject,
+        EmbeddingUsage,
+        CreateEmbeddingResponse
+    ))
+)]
+pub(crate) struct ConfidentialEmbeddingsOpenApi;
+
+/// Create confidential embeddings
+///
+/// This endpoint follows the OpenAI API format for generating vector embeddings from input text,
+/// but with confidential processing (through AEAD encryption and TEE hardware).
+/// The handler receives pre-processed metadata from middleware and forwards the request to
+/// the selected node.
+///
+/// Note: Authentication, node selection, initial request validation and encryption
+/// are handled by middleware before this handler is called.
+///
+/// # Arguments
+/// * `metadata` - Pre-processed request metadata containing node information and compute units
+/// * `state` - The shared proxy state containing configuration and runtime information
+/// * `headers` - HTTP headers from the incoming request
+/// * `payload` - The JSON request body containing the model and input text
+///
+/// # Returns
+/// * `Ok(Response)` - The embeddings response from the processing node
+/// * `Err(StatusCode)` - An error status code if any step fails
+///
+/// # Errors
+/// * `INTERNAL_SERVER_ERROR` - Processing or node communication failures
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, description = "Confidential embeddings generated successfully", body = CreateEmbeddingResponse),
+        (status = BAD_REQUEST, description = "Bad request"),
+        (status = UNAUTHORIZED, description = "Unauthorized"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
-pub async fn embeddings_handler(
+#[instrument(
+    level = "info",
+    skip_all,
+    fields(endpoint = metadata.endpoint)
+)]
+pub async fn confidential_embeddings_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
