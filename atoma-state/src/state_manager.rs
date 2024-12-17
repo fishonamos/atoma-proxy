@@ -2,8 +2,8 @@ use crate::build_query_with_in;
 use crate::handlers::{handle_atoma_event, handle_state_manager_event};
 use crate::types::{
     AtomaAtomaStateManagerEvent, CheapestNode, ComputedUnitsProcessedResponse, LatencyResponse,
-    NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket, StatsStackResponse,
-    Task,
+    NodeDistribution, NodeSubscription, Stack, StackAttestationDispute, StackSettlementTicket,
+    StatsStackResponse, Task,
 };
 
 use atoma_sui::events::AtomaEvent;
@@ -672,6 +672,41 @@ impl AtomaState {
         stats_stacks
             .into_iter()
             .map(|stack| StatsStackResponse::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .collect()
+    }
+
+    /// Get the distribution of nodes by country.
+    /// This method fetches the distribution of nodes by country from the `nodes` table.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<Vec<NodeDistribution>>`: A result containing either:
+    ///  - `Ok(Vec<NodeDistribution>)`: The distribution of nodes by country.
+    /// - `Err(AtomaStateManagerError)`: An error if the database query fails or if there's an issue parsing the results.
+    ///
+    /// # Errors
+    ///
+    /// - The database query fails to execute.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn get_nodes_distribution(state_manager: &AtomaStateManager) -> Result<Vec<NodeDistribution>, AtomaStateManagerError> {
+    ///    state_manager.get_nodes_distribution().await
+    /// }
+    /// ```
+    #[instrument(level = "trace", skip_all)]
+    pub async fn get_nodes_distribution(&self) -> Result<Vec<NodeDistribution>> {
+        let nodes_distribution = sqlx::query(
+            "SELECT country, COUNT(*) AS count FROM nodes GROUP BY country ORDER BY count DESC",
+        )
+        .fetch_all(&self.db)
+        .await?;
+        nodes_distribution
+            .into_iter()
+            .map(|node| NodeDistribution::from_row(&node).map_err(AtomaStateManagerError::from))
             .collect()
     }
 
@@ -2317,6 +2352,7 @@ impl AtomaState {
     ///
     /// * `small_id` - The unique small identifier of the node.
     /// * `address` - The public address of the node.
+    /// * `country` - The country of the node.
     ///
     /// # Returns
     ///
@@ -2332,15 +2368,21 @@ impl AtomaState {
     /// ```rust,ignore
     /// use atoma_node::atoma_state::AtomaStateManager;
     ///
-    /// async fn update_address(state_manager: &AtomaStateManager, small_id: i64, address: String) -> Result<(), AtomaStateManagerError> {
-    ///    state_manager.update_node_public_address(small_id, address).await
+    /// async fn update_address(state_manager: &AtomaStateManager, small_id: i64, address: String, country:String) -> Result<(), AtomaStateManagerError> {
+    ///    state_manager.update_node_public_address(small_id, address, country).await
     /// }
     /// ```
     #[instrument(level = "trace", skip_all, fields(%small_id, %address))]
-    pub async fn update_node_public_address(&self, small_id: i64, address: String) -> Result<()> {
-        sqlx::query("UPDATE nodes SET public_address = $2 WHERE node_small_id = $1")
+    pub async fn update_node_public_address(
+        &self,
+        small_id: i64,
+        address: String,
+        country: String,
+    ) -> Result<()> {
+        sqlx::query("UPDATE nodes SET public_address = $2, country = $3 WHERE node_small_id = $1")
             .bind(small_id)
             .bind(address)
+            .bind(country)
             .execute(&self.db)
             .await?;
         Ok(())

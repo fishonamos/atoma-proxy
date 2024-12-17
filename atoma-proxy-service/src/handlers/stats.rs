@@ -1,4 +1,6 @@
-use atoma_state::types::{ComputedUnitsProcessedResponse, LatencyResponse, StatsStackResponse};
+use atoma_state::types::{
+    ComputedUnitsProcessedResponse, LatencyResponse, NodeDistribution, StatsStackResponse,
+};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -16,8 +18,10 @@ type Result<T> = std::result::Result<T, StatusCode>;
 pub(crate) const COMPUTE_UNITS_PROCESSED_PATH: &str = "/compute_units_processed";
 /// The path for the compute_units_processed endpoint.
 pub(crate) const LATENCY_PATH: &str = "/latency";
-/// The path for the get_all_stacks endpoint.
+/// The path for the get_stats_stacks endpoint.
 pub(crate) const GET_STATS_STACKS_PATH: &str = "/get_stats_stacks";
+/// The path for the get_nodes_distribution endpoint.
+pub(crate) const GET_NODES_DISTRIBUTION_PATH: &str = "/get_nodes_distribution";
 
 /// Returns a router with the stats endpoint.
 ///
@@ -31,6 +35,7 @@ pub(crate) fn stats_router() -> Router<ProxyServiceState> {
         )
         .route(LATENCY_PATH, get(get_latency))
         .route(GET_STATS_STACKS_PATH, get(get_stats_stacks))
+        .route(GET_NODES_DISTRIBUTION_PATH, get(get_nodes_distribution))
 }
 
 /// OpenAPI documentation for the get_compute_units_processed endpoint.
@@ -210,6 +215,62 @@ async fn get_stats_stacks(
             .await
             .map_err(|_| {
                 error!("Failed to get stats for stacks");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?,
+    ))
+}
+
+/// OpenAPI documentation for the get_nodes_distribution endpoint.
+///
+/// This struct is used to generate OpenAPI documentation for the get_nodes_distribution
+/// endpoint. It uses the `utoipa` crate's derive macro to automatically generate
+/// the OpenAPI specification from the code.
+#[derive(OpenApi)]
+#[openapi(paths(get_nodes_distribution))]
+pub(crate) struct GetNodeDistribution;
+
+/// Get nodes distribution.
+///
+/// # Arguments
+///
+/// * `proxy_service_state` - The shared state containing the state manager
+///
+/// # Returns
+///
+/// * `Result<Json<Vec<NodeDistribution>>` - A JSON response containing a list of nodes distribution
+///  - `Ok(Json<Vec<NodeDistribution>>)` - Successfully retrieved nodes distribution
+/// - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve nodes distribution from state manager
+///
+/// # Example Response
+///
+/// Returns a JSON array of nodes distribution
+/// ```json
+/// [
+///  {
+///   "country": "US",
+///   "count": 2
+///  }
+/// ]
+/// ```
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, description = "Retrieves nodes distribution", body = Value),
+        (status = INTERNAL_SERVER_ERROR, description = "Failed to get node distribution")
+    )
+)]
+#[instrument(level = "trace", skip_all)]
+async fn get_nodes_distribution(
+    State(proxy_service_state): State<ProxyServiceState>,
+) -> Result<Json<Vec<NodeDistribution>>> {
+    Ok(Json(
+        proxy_service_state
+            .atoma_state
+            .get_nodes_distribution()
+            .await
+            .map_err(|_| {
+                error!("Failed to get nodes distribution");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
     ))

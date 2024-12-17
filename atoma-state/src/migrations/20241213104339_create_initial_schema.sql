@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS nodes (
     node_small_id BIGINT PRIMARY KEY,
     sui_address TEXT NOT NULL,
-    public_address TEXT
+    public_address TEXT,
+    country TEXT
 );
 
 -- Create node_subscriptions table

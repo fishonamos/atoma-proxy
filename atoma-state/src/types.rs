@@ -142,6 +142,15 @@ pub struct CheapestNode {
     pub max_num_compute_units: i64,
 }
 
+/// Response for getting the node distribution
+/// This struct is used to represent the response for the get_node_distribution endpoint.
+/// The country is the country of the node and the count is the number of nodes in that country.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
+pub struct NodeDistribution {
+    pub country: Option<String>,
+    pub count: i64,
+}
+
 /// Represents a stack of compute units for a specific task
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct Stack {
@@ -353,6 +362,7 @@ pub enum AtomaAtomaStateManagerEvent {
         node_small_id: i64,
         /// Public address of the node
         public_address: String,
+        country: String,
     },
     /// Retrieves a node's public address
     GetNodePublicAddress {
