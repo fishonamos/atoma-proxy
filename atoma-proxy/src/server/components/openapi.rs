@@ -46,7 +46,7 @@ pub fn openapi_routes() -> Router {
             (name = "Embeddings", description = "OpenAI's API embeddings v1 endpoint"),
             (name = "Confidential Embeddings", description = "Atoma's API confidential embeddings v1 endpoint"),
             (name = "Images", description = "OpenAI's API images v1 endpoint"),
-            (name = "Confidential Images", description = "Atoma's API confidential images v1 endpoint"),
+            (name = "Confidential Images", description = "Atoma's API confidential images v1 endpoint")
         ),
         servers(
             (url = "http://localhost:8080"),
@@ -71,11 +71,23 @@ pub fn openapi_routes() -> Router {
                         "methodNameOverride": "create"
                     },
                     {
+                        "operationId": "confidential_chat_completions_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
                         "operationId": "embeddings_create",
                         "methodNameOverride": "create"
                     },
                     {
+                        "operationId": "confidential_embeddings_create",
+                        "methodNameOverride": "create"
+                    },
+                    {
                         "operationId": "image_generations_create",
+                        "methodNameOverride": "generate"
+                    },
+                    {
+                        "operationId": "confidential_image_generations_create",
                         "methodNameOverride": "generate"
                     }
                 ]),
