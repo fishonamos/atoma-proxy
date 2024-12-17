@@ -7,10 +7,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Extension;
 use axum::{extract::State, http::HeaderMap, Json};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::types::chrono::{DateTime, Utc};
 use tracing::{error, instrument};
-use utoipa::OpenApi;
+use utoipa::{OpenApi, ToSchema};
 use x25519_dalek::PublicKey;
 
 use crate::server::{
@@ -57,7 +58,10 @@ pub struct RequestModelImageGenerations {
 
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
-#[openapi(paths(image_generations_handler))]
+#[openapi(
+    paths(image_generations_handler),
+    components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
+)]
 pub(crate) struct ImageGenerationsOpenApi;
 
 impl RequestModel for RequestModelImageGenerations {
@@ -138,7 +142,7 @@ impl RequestModel for RequestModelImageGenerations {
     post,
     path = "",
     responses(
-        (status = OK, description = "Image generations", body = Value),
+        (status = OK, description = "Image generations", body = CreateImageResponse),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
@@ -156,7 +160,7 @@ pub async fn image_generations_handler(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
-    Json(payload): Json<Value>,
+    Json(payload): Json<CreateImageRequest>,
 ) -> Result<Response<Body>, StatusCode> {
     handle_image_generation_response(
         state,
@@ -217,7 +221,7 @@ async fn handle_image_generation_response(
     node_address: String,
     selected_node_id: i64,
     headers: HeaderMap,
-    payload: Value,
+    payload: CreateImageRequest,
     total_tokens: i64,
     endpoint: String,
     salt: Option<[u8; constants::SALT_SIZE]>,
@@ -275,4 +279,53 @@ async fn handle_image_generation_response(
         })?;
 
     Ok(Json(response).into_response())
+}
+
+/// Request body for image generation
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateImageRequest {
+    /// A text description of the desired image(s). The maximum length is 1000 characters.
+    pub prompt: String,
+
+    /// The model to use for image generation.
+    pub model: String,
+
+    /// The number of images to generate. Must be between 1 and 10.
+    pub n: u32,
+
+    /// The quality of the image that will be generated.
+    /// `hd` creates images with finer details and greater consistency across the image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+
+    /// The format in which the generated images are returned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<String>,
+
+    /// The size of the generated images.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+
+    /// The style of the generated images.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+
+    /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+//TODO: Add support for b64_json format
+/// Response format for image generation
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateImageResponse {
+    pub created: i64,
+    pub data: Vec<ImageData>,
+}
+
+/// Individual image data in the response
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ImageData {
+    pub revised_prompt: String,
+    pub url: String,
 }
