@@ -390,6 +390,8 @@ pub enum AtomaAtomaStateManagerEvent {
         already_computed_units: i64,
         /// Timestamp of the transaction that created the stack
         transaction_timestamp: DateTime<Utc>,
+        /// User id of the stack owner (referencing local user table)
+        user_id: i64,
     },
     /// Records statistics about a node's throughput performance
     UpdateNodeThroughputPerformance {
@@ -491,7 +493,7 @@ pub enum AtomaAtomaStateManagerEvent {
         api_token: String,
         /// Channel to send back the result
         /// Returns Ok(bool) with true if the API token is valid or false if it is not
-        result_sender: oneshot::Sender<Result<bool>>,
+        result_sender: oneshot::Sender<Result<i64>>,
     },
     /// Revokes an API token for a user
     RevokeApiToken {

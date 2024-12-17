@@ -1417,11 +1417,11 @@ impl AtomaState {
             num_compute_units = %stack.num_compute_units,
             price = %stack.price)
     )]
-    pub async fn insert_new_stack(&self, stack: Stack) -> Result<()> {
+    pub async fn insert_new_stack(&self, stack: Stack, user_id: i64) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages, user_id) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
             .bind(stack.owner)
             .bind(stack.stack_small_id)
@@ -1434,6 +1434,7 @@ impl AtomaState {
             .bind(stack.in_settle_period)
             .bind(stack.total_hash)
             .bind(stack.num_total_messages)
+            .bind(user_id)
             .execute(&self.db)
             .await?;
         Ok(())
@@ -3046,13 +3047,13 @@ impl AtomaState {
     /// }
     /// ```
     #[instrument(level = "trace", skip(self))]
-    pub async fn is_api_token_valid(&self, api_token: &str) -> Result<bool> {
-        let is_valid = sqlx::query("SELECT EXISTS(SELECT 1 FROM api_tokens WHERE token = $1)")
+    pub async fn is_api_token_valid(&self, api_token: &str) -> Result<i64> {
+        let is_valid = sqlx::query("SELECT user_id FROM api_tokens WHERE token = $1")
             .bind(api_token)
             .fetch_one(&self.db)
             .await?;
 
-        Ok(is_valid.get::<bool, _>(0))
+        Ok(is_valid.get::<i64, _>(0))
     }
 
     /// Stores a new api token for a user.

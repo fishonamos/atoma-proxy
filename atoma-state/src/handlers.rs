@@ -379,6 +379,7 @@ pub(crate) async fn handle_stack_created_event(
     state_manager: &AtomaStateManager,
     event: StackCreatedEvent,
     already_computed_units: i64,
+    user_id: i64,
 ) -> Result<()> {
     let node_small_id = event.selected_node_id.inner;
     trace!(
@@ -388,7 +389,7 @@ pub(crate) async fn handle_stack_created_event(
     );
     let mut stack: Stack = event.into();
     stack.already_computed_units = already_computed_units;
-    state_manager.state.insert_new_stack(stack).await?;
+    state_manager.state.insert_new_stack(stack, user_id).await?;
     Ok(())
 }
 
@@ -784,7 +785,7 @@ pub(crate) async fn handle_state_manager_event(
         AtomaAtomaStateManagerEvent::GetStacksForModel {
             model,
             free_compute_units,
-            owner,
+            user_id,
             result_sender,
             is_confidential,
         } => {
@@ -892,8 +893,10 @@ pub(crate) async fn handle_state_manager_event(
             event,
             already_computed_units,
             transaction_timestamp: _,
+            user_id,
         } => {
-            handle_stack_created_event(state_manager, event, already_computed_units).await?;
+            handle_stack_created_event(state_manager, event, already_computed_units, user_id)
+                .await?;
         }
         AtomaAtomaStateManagerEvent::UpdateNodeThroughputPerformance {
             timestamp,
@@ -1023,9 +1026,9 @@ pub(crate) async fn handle_state_manager_event(
             api_token,
             result_sender,
         } => {
-            let is_valid = state_manager.state.is_api_token_valid(&api_token).await;
+            let user_id = state_manager.state.is_api_token_valid(&api_token).await;
             result_sender
-                .send(is_valid)
+                .send(user_id)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::StoreNewApiToken { user_id, api_token } => {
@@ -1181,7 +1184,7 @@ mod utils {
         quote_bytes: &[u8],
         new_public_key: &[u8],
     ) -> Result<()> {
-        let quote = Quote::parse(&quote_bytes)
+        let quote = Quote::parse(quote_bytes)
             .map_err(|e| AtomaStateManagerError::FailedToParseQuote(format!("{e:?}")))?;
         let fmspc = quote
             .fmspc()
@@ -1196,29 +1199,29 @@ mod utils {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| AtomaStateManagerError::UnixTimeWentBackwards(e.to_string()))?
-            .as_secs() as u64;
+            .as_secs();
         match quote.report {
             Report::SgxEnclave(_) => {
-                return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
-                    "Report SGX type not supported",
-                )));
+                return Err(AtomaStateManagerError::FailedToVerifyQuote(
+                    "Report SGX type not supported".to_string(),
+                ));
             }
             Report::TD10(report) => {
                 if report.report_data != new_public_key {
-                    return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
-                        "Report TD10 data does not match new public key",
-                    )));
+                    return Err(AtomaStateManagerError::FailedToVerifyQuote(
+                        "Report TD10 data does not match new public key".to_string(),
+                    ));
                 }
             }
             Report::TD15(report) => {
                 if report.base.report_data != new_public_key {
-                    return Err(AtomaStateManagerError::FailedToVerifyQuote(format!(
-                        "Report TD15 data does not match new public key",
-                    )));
+                    return Err(AtomaStateManagerError::FailedToVerifyQuote(
+                        "Report TD15 data does not match new public key".to_string(),
+                    ));
                 }
             }
         }
-        verify(&quote_bytes, &collateral, now)
+        verify(quote_bytes, &collateral, now)
             .map_err(|e| AtomaStateManagerError::FailedToVerifyQuote(format!("{e:?}")))?;
         Ok(())
     }
