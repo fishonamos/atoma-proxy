@@ -7,10 +7,7 @@ use crate::server::handlers::{
     embeddings::EmbeddingsOpenApi, embeddings::EMBEDDINGS_PATH,
     image_generations::ImageGenerationsOpenApi, image_generations::IMAGE_GENERATIONS_PATH,
 };
-use crate::server::http_server::{
-    HealthOpenApi, ModelsOpenApi, NodePublicAddressRegistrationOpenApi, HEALTH_PATH, MODELS_PATH,
-    NODE_PUBLIC_ADDRESS_REGISTRATION_PATH,
-};
+use crate::server::http_server::{HealthOpenApi, ModelsOpenApi, HEALTH_PATH, MODELS_PATH};
 
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
@@ -18,7 +15,6 @@ pub fn openapi_routes() -> Router {
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi, tags = ["Health"]),
             (path = MODELS_PATH, api = ModelsOpenApi, tags = ["Models"]),
-            (path = NODE_PUBLIC_ADDRESS_REGISTRATION_PATH, api = NodePublicAddressRegistrationOpenApi, tags = ["Node Public Address Registration"]),
             (path = CHAT_COMPLETIONS_PATH, api = ChatCompletionsOpenApi, tags = ["Chat Completions"]),
             (path = EMBEDDINGS_PATH, api = EmbeddingsOpenApi, tags = ["Embeddings"]),
             (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi, tags = ["Image Generations"]),
@@ -27,7 +23,6 @@ pub fn openapi_routes() -> Router {
             (name = "Health", description = "Health check"),
             (name = "Chat Completions", description = "Chat completions"),
             (name = "Models", description = "Models"),
-            (name = "Node Public Address Registration", description = "Node public address registration"),
             (name = "Embeddings", description = "OpenAI's API embeddings v1 endpoint"),
             (name = "Image Generations", description = "OpenAI's API image generations v1 endpoint"),
         ),
