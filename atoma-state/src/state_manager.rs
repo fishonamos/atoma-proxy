@@ -236,44 +236,50 @@ impl AtomaState {
         free_units: i64,
         is_confidential: bool,
     ) -> Result<Vec<Stack>> {
-        let query = if is_confidential {
-            "WITH selected_stack AS (
+        let mut query = String::from(
+            r#"
+            WITH selected_stack AS (
                 SELECT stacks.stack_small_id
                 FROM stacks
-                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
-                INNER JOIN node_public_keys ON node_public_keys.node_small_id = stacks.node_small_id
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id"#,
+        );
+
+        if is_confidential {
+            query.push_str(r#"
+                INNER JOIN node_public_keys ON node_public_keys.node_small_id = stacks.node_small_id"#);
+        }
+
+        query.push_str(
+            r#"
                 WHERE tasks.model_name = $1
-                AND stacks.num_compute_units - stacks.already_computed_units >= $2
-                AND node_public_keys.is_valid = true
+                AND stacks.num_compute_units - stacks.already_computed_units >= $2"#,
+        );
+
+        if is_confidential {
+            query.push_str(
+                r#"
+                AND node_public_keys.is_valid = true"#,
+            );
+        }
+
+        query.push_str(
+            r#"
                 LIMIT 1
             )
             UPDATE stacks
             SET already_computed_units = already_computed_units + $2
             WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
-            RETURNING stacks.*"
-        } else {
-            "WITH selected_stack AS (
-                SELECT stacks.stack_small_id
-                FROM stacks
-                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
-                WHERE tasks.model_name = $1
-                AND stacks.num_compute_units - stacks.already_computed_units >= $2
-                LIMIT 1
-            )
-            UPDATE stacks
-            SET already_computed_units = already_computed_units + $2
-            WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
-            RETURNING stacks.*"
-        };
-        // TODO: filter also by security level and other constraints
-        let tasks = sqlx::query(query)
+            RETURNING stacks.*"#,
+        );
+
+        let stacks = sqlx::query(&query)
             .bind(model)
             .bind(free_units)
             .fetch_all(&self.db)
             .await?;
-        tasks
+        stacks
             .into_iter()
-            .map(|task| Stack::from_row(&task).map_err(AtomaStateManagerError::from))
+            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
             .collect()
     }
 
