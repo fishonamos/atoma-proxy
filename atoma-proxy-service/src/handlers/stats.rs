@@ -270,7 +270,7 @@ async fn get_nodes_distribution(
             .get_nodes_distribution()
             .await
             .map_err(|_| {
-                error!("Failed to get performance");
+                error!("Failed to get nodes distribution");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?,
     ))

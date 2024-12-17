@@ -96,6 +96,80 @@ paths:
           description: Failed to generate api token
       security:
       - bearerAuth: []
+  /get_nodes_distribution:
+    get:
+      tags:
+      - Stats
+      summary: Get nodes distribution.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+
+        * `Result<Json<Vec<NodeDistribution>>` - A JSON response containing a list of nodes distribution
+         - `Ok(Json<Vec<NodeDistribution>>)` - Successfully retrieved nodes distribution
+        - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve nodes distribution from state manager
+
+        # Example Response
+
+        Returns a JSON array of nodes distribution
+        ```json
+        [
+         {
+          "country": "US",
+          "count": 2
+         }
+        ]
+        ```
+      operationId: get_nodes_distribution
+      responses:
+        '200':
+          description: Retrieves nodes distribution
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Failed to get node distribution
+  /get_stats_stacks:
+    get:
+      tags:
+      - Stats
+      summary: Get all stacks.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+
+        # Returns
+
+        * `Result<Json<Vec<LatencyResponse>>` - A JSON response containing a list of latency performance
+          - `Ok(Json<Vec<LatencyResponse>>)` - Successfully retrieved latency performance
+          - `Err(StatusCode::INTERNAL_SERVER_ERROR)` - Failed to retrieve latency performance from state manager
+
+        # Example Response
+
+        Returns a JSON array of LatencyResponse objects for the specified hours
+        ```json
+        [
+          {
+             timestamp: "2024-03-21T12:00:00Z",
+             latency: 123,
+             requests: 2,
+             time: 45
+          }
+        ]
+        ```
+      operationId: get_stats_stacks
+      responses:
+        '200':
+          description: Retrieves all latency performance
+          content:
+            application/json:
+              schema: {}
+        '500':
+          description: Failed to get performance
   /health:
     get:
       tags:
@@ -324,21 +398,26 @@ components:
   schemas:
     AuthRequest:
       type: object
+      description: Request payload for user authentication
       required:
       - username
       - password
       properties:
         password:
           type: string
+          description: The user's password
         username:
           type: string
+          description: The user's unique identifier
     RevokeApiTokenRequest:
       type: object
+      description: Request payload for revoking an API token
       required:
       - api_token
       properties:
         api_token:
           type: string
+          description: The API token to be revoked
   securitySchemes:
     bearerAuth:
       type: http

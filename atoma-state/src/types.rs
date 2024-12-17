@@ -147,7 +147,7 @@ pub struct CheapestNode {
 /// The country is the country of the node and the count is the number of nodes in that country.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromRow)]
 pub struct NodeDistribution {
-    pub country: String,
+    pub country: Option<String>,
     pub count: i64,
 }
 
