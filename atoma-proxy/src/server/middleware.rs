@@ -621,7 +621,7 @@ pub(crate) mod auth {
                 }
             }
         }
-        error!("Invalid or missing password for request");
+        error!("Invalid or missing api token for request");
         Err(StatusCode::UNAUTHORIZED)
     }
 
