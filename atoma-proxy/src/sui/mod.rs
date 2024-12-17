@@ -12,7 +12,9 @@ use sui_sdk::{
     json::SuiJsonValue,
     rpc_types::Page,
     types::{
-        base_types::ObjectID, crypto::EncodeDecodeBase64, digests::TransactionDigest,
+        base_types::{ObjectID, SuiAddress},
+        crypto::EncodeDecodeBase64,
+        digests::TransactionDigest,
         SUI_RANDOMNESS_STATE_OBJECT_ID,
     },
     wallet_context::WalletContext,
@@ -31,6 +33,8 @@ pub struct StackEntryResponse {
     pub transaction_digest: TransactionDigest,
     /// The event data emitted when the stack was created
     pub stack_created_event: StackCreatedEvent,
+    /// Timestamp of the stack entry creation
+    pub timestamp_ms: Option<u64>,
 }
 
 /// The Sui client
@@ -67,6 +71,19 @@ impl Sui {
             atoma_db_id: sui_config.atoma_db(),
             toma_package_id: sui_config.toma_package_id(),
         })
+    }
+
+    /// Get the wallet address
+    ///
+    /// # Returns
+    ///
+    /// Returns the wallet address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the wallet context fails to get the active address.
+    pub fn get_wallet_address(&mut self) -> Result<SuiAddress> {
+        self.wallet_ctx.active_address()
     }
 
     /// Acquire a new stack entry
@@ -133,6 +150,7 @@ impl Sui {
         Ok(StackEntryResponse {
             transaction_digest: response.digest,
             stack_created_event: serde_json::from_value(stack_created_event.clone())?,
+            timestamp_ms: response.timestamp_ms,
         })
     }
 

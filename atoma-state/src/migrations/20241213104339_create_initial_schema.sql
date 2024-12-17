@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS nodes (
     node_small_id BIGINT PRIMARY KEY,
     sui_address TEXT NOT NULL,
-    public_address TEXT
+    public_address TEXT,
+    country TEXT
 );
 
 -- Create node_subscriptions table
@@ -171,3 +172,13 @@ CREATE TABLE IF NOT EXISTS stats_latency (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stats_latency ON stats_latency (timestamp);
+
+-- Create stacks table
+CREATE TABLE IF NOT EXISTS stats_stacks (
+    timestamp TIMESTAMPTZ PRIMARY KEY NOT NULL,
+    num_compute_units BIGINT NOT NULL,
+    settled_num_compute_units BIGINT NOT NULL,
+    CHECK (date_part('minute', timestamp) = 0 AND date_part('second', timestamp) = 0 AND date_part('milliseconds', timestamp) = 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stats_stacks ON stats_stacks (timestamp);

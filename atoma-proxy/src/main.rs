@@ -142,13 +142,14 @@ async fn main() -> Result<()> {
         shutdown_receiver.clone(),
     );
 
-    let sui = Sui::new(&config.sui).await?;
+    let mut sui = Sui::new(&config.sui).await?;
 
     // Initialize your StateManager here
     let state_manager = AtomaStateManager::new_from_url(
         &config.state.database_url,
         event_subscriber_receiver,
         state_manager_receiver,
+        sui.get_wallet_address()?.to_string(),
     )
     .await?;
 

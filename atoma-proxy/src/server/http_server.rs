@@ -91,11 +91,6 @@ pub struct ProxyState {
     /// such as acquiring new stack entries.
     pub sui: Arc<RwLock<Sui>>,
 
-    /// The password for the atoma proxy service.
-    ///
-    /// This password is used to authenticate requests to the atoma proxy service.
-    pub password: String,
-
     /// Tokenizer used for processing text input.
     ///
     /// The tokenizer is responsible for breaking down text input into
@@ -261,6 +256,8 @@ pub struct NodePublicAddressAssignment {
     node_small_id: u64,
     /// The public address of the node
     public_address: String,
+    /// The country of the node
+    country: String,
 }
 
 #[derive(OpenApi)]
@@ -403,6 +400,7 @@ pub async fn node_public_address_registration(
         .send(AtomaAtomaStateManagerEvent::UpsertNodePublicAddress {
             node_small_id: payload.node_small_id as i64,
             public_address: payload.public_address.clone(),
+            country: payload.country.clone(),
         })
         .map_err(|err| {
             error!("Failed to send UpsertNodePublicAddress event: {:?}", err);
@@ -536,7 +534,6 @@ pub async fn start_server(
     let proxy_state = ProxyState {
         state_manager_sender,
         sui: Arc::new(RwLock::new(sui)),
-        password: config.password,
         tokenizers: Arc::new(tokenizers),
         models: Arc::new(config.models),
         secret_key: Arc::new(Zeroizing::new(secret_key)),
