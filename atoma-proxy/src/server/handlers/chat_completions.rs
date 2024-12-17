@@ -50,7 +50,7 @@ const MAX_TOKENS: &str = "max_tokens";
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(chat_completions_handler),
+    paths(chat_completions_create),
     components(schemas(
         ChatCompletionRequest,
         ChatCompletionMessage,
@@ -106,7 +106,7 @@ pub(crate) struct ChatCompletionsOpenApi;
         path = metadata.endpoint,
     )
 )]
-pub async fn chat_completions_handler(
+pub async fn chat_completions_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
@@ -173,7 +173,7 @@ pub async fn chat_completions_handler(
 /// * `ChatCompletionChunkDelta` - Incremental updates in streaming responses
 #[derive(OpenApi)]
 #[openapi(
-    paths(chat_completions_handler),
+    paths(confidential_chat_completions_create),
     components(schemas(
         ChatCompletionRequest,
         ChatCompletionMessage,
@@ -260,7 +260,7 @@ pub(crate) struct ConfidentialChatCompletionsOpenApi;
         path = metadata.endpoint,
     )
 )]
-pub async fn confidential_chat_completions_handler(
+pub async fn confidential_chat_completions_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,

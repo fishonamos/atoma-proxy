@@ -59,7 +59,7 @@ pub struct RequestModelImageGenerations {
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(image_generations_handler),
+    paths(image_generations_create),
     components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
 )]
 pub(crate) struct ImageGenerationsOpenApi;
@@ -153,7 +153,7 @@ impl RequestModel for RequestModelImageGenerations {
     skip_all,
     fields(endpoint = metadata.endpoint)
 )]
-pub async fn image_generations_handler(
+pub async fn image_generations_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
@@ -177,7 +177,7 @@ pub async fn image_generations_handler(
 /// OpenAPI documentation for the image generations endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(image_generations_handler),
+    paths(confidential_image_generations_create),
     components(schemas(CreateImageRequest, CreateImageResponse, ImageData))
 )]
 pub(crate) struct ConfidentialImageGenerationsOpenApi;
@@ -219,7 +219,7 @@ pub(crate) struct ConfidentialImageGenerationsOpenApi;
     skip_all,
     fields(endpoint = metadata.endpoint)
 )]
-pub async fn confidential_image_generations_handler(
+pub async fn confidential_image_generations_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,

@@ -56,7 +56,7 @@ pub struct RequestModelEmbeddings {
 /// OpenAPI documentation for the embeddings endpoint.
 #[derive(OpenApi)]
 #[openapi(
-    paths(embeddings_handler),
+    paths(embeddings_create),
     components(schemas(
         CreateEmbeddingRequest,
         EmbeddingObject,
@@ -147,7 +147,7 @@ impl RequestModel for RequestModelEmbeddings {
     skip_all,
     fields(endpoint = metadata.endpoint)
 )]
-pub async fn embeddings_handler(
+pub async fn embeddings_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
@@ -177,7 +177,7 @@ pub async fn embeddings_handler(
 /// Atoma's confidential embeddings OpenAPI documentation.
 #[derive(OpenApi)]
 #[openapi(
-    paths(confidential_embeddings_handler),
+    paths(confidential_embeddings_create),
     components(schemas(
         CreateEmbeddingRequest,
         EmbeddingObject,
@@ -224,7 +224,7 @@ pub(crate) struct ConfidentialEmbeddingsOpenApi;
     skip_all,
     fields(endpoint = metadata.endpoint)
 )]
-pub async fn confidential_embeddings_handler(
+pub async fn confidential_embeddings_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
