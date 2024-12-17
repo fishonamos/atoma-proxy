@@ -340,7 +340,7 @@ pub enum AtomaAtomaStateManagerEvent {
         is_confidential: bool,
         /// Channel to send back the list of matching stacks
         /// Returns Ok(Vec<Stack>) with matching stacks or an error if the query fails
-        result_sender: oneshot::Sender<Result<Vec<Stack>>>,
+        result_sender: oneshot::Sender<Result<Option<Stack>>>,
     },
     /// Retrieves all tasks associated with a specific model
     GetTasksForModel {

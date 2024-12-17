@@ -796,12 +796,12 @@ pub(crate) async fn handle_state_manager_event(
                 model,
                 free_compute_units
             );
-            let stacks = state_manager
+            let stack = state_manager
                 .state
                 .get_stacks_for_model(&model, free_compute_units, user_id, is_confidential)
                 .await;
             result_sender
-                .send(stacks)
+                .send(stack)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
         AtomaAtomaStateManagerEvent::GetTasksForModel {
@@ -1105,7 +1105,6 @@ pub(crate) async fn handle_node_key_rotation_event(
         new_public_key,
         tee_remote_attestation_bytes,
     } = event;
-    // TODO: We need to check that the
     let is_valid =
         utils::verify_quote_v4_attestation(&tee_remote_attestation_bytes, &new_public_key)
             .await

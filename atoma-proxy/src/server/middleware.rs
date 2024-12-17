@@ -703,7 +703,7 @@ pub(crate) mod auth {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        let stacks = result_receiver
+        let optional_stack = result_receiver
             .await
             .map_err(|err| {
                 error!("Failed to receive GetStacksForModel result: {:?}", err);
@@ -714,7 +714,13 @@ pub(crate) mod auth {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        if stacks.is_empty() {
+        if let Some(stack) = optional_stack {
+            Ok(SelectedNodeMetadata {
+                stack_small_id: stack.stack_small_id,
+                selected_node_id: stack.selected_node_id,
+                tx_digest: None,
+            })
+        } else {
             let (result_sender, result_receiver) = oneshot::channel();
             state_manager_sender
                 .send(AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
@@ -780,12 +786,6 @@ pub(crate) mod auth {
                 stack_small_id,
                 selected_node_id,
                 tx_digest: Some(tx_digest),
-            })
-        } else {
-            Ok(SelectedNodeMetadata {
-                stack_small_id: stacks[0].stack_small_id,
-                selected_node_id: stacks[0].selected_node_id,
-                tx_digest: None,
             })
         }
     }

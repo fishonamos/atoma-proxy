@@ -243,7 +243,8 @@ impl AtomaState {
         free_units: i64,
         user_id: i64,
         is_confidential: bool,
-    ) -> Result<Vec<Stack>> {
+    ) -> Result<Option<Stack>> {
+        // TODO: filter also by security level and other constraints
         let mut query = String::from(
             r#"
             WITH selected_stack AS (
@@ -281,16 +282,15 @@ impl AtomaState {
             RETURNING stacks.*"#,
         );
 
-        let stacks = sqlx::query(&query)
+        let stack = sqlx::query(&query)
             .bind(model)
             .bind(free_units)
             .bind(user_id)
-            .fetch_all(&self.db)
-            .await?;
-        stacks
-            .into_iter()
+            .fetch_optional(&self.db)
+            .await?
             .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
-            .collect()
+            .transpose()?;
+        Ok(stack)
     }
 
     /// Get tasks for model.
