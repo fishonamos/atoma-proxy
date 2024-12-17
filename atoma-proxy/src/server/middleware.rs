@@ -686,6 +686,7 @@ pub(crate) mod auth {
         state_manager_sender: &Sender<AtomaAtomaStateManagerEvent>,
         sui: &Arc<RwLock<Sui>>,
         total_tokens: u64,
+        user_id: i64,
         is_confidential: bool,
     ) -> Result<SelectedNodeMetadata, StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -694,17 +695,9 @@ pub(crate) mod auth {
             .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
                 model: model.to_string(),
                 free_compute_units: total_tokens as i64,
-                owner: sui
-                    .write()
-                    .await
-                    .get_wallet_address()
-                    .map_err(|e| {
-                        error!("Failed to get wallet address: {:?}", e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?
-                    .to_string(),
-                result_sender,
+                user_id,
                 is_confidential,
+                result_sender,
             })
             .map_err(|err| {
                 error!("Failed to send GetStacksForModel event: {:?}", err);
