@@ -658,7 +658,7 @@ impl AtomaState {
 
     /// Get stacks created/settled for the last `last_hours` hours.
     ///
-    /// This method fetches the stacks created/settled for the last `last_hours` hours from the `stats_stack` table.
+    /// This method fetches the stacks created/settled for the last `last_hours` hours from the `stats_stacks` table.
     ///
     /// # Arguments
     ///
@@ -688,7 +688,7 @@ impl AtomaState {
             .checked_sub_signed(chrono::Duration::hours(last_hours as i64))
             .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
         let stats_stacks =
-            sqlx::query("SELECT * FROM stats_stack WHERE timestamp >= $1 ORDER BY timestamp ASC")
+            sqlx::query("SELECT * FROM stats_stacks WHERE timestamp >= $1 ORDER BY timestamp ASC")
                 .bind(start_timestamp)
                 .fetch_all(&self.db)
                 .await?;
@@ -1722,10 +1722,10 @@ impl AtomaState {
             .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
         // Also update the stack to set in_settle_period to true
         sqlx::query(
-            "INSERT into stats_stack (timestamp,settled_num_compute_units) SET ($1,$2)
+            "INSERT into stats_stacks (timestamp,settled_num_compute_units) VALUES ($1,$2)
              ON CONFLICT (timestamp) 
              DO UPDATE SET 
-                settled_num_compute_units = stats_stack.settled_num_compute_units + EXCLUDED.settled_num_compute_units"
+                settled_num_compute_units = stats_stacks.settled_num_compute_units + EXCLUDED.settled_num_compute_units"
         )
         .bind(timestamp)
         .bind(stack_settlement_ticket.num_claimed_compute_units)
@@ -3337,7 +3337,7 @@ impl AtomaState {
 
     /// Records statistics about a new stack in the database.
     ///
-    /// This method inserts or updates hourly statistics about stack compute units in the `stats_stack` table.
+    /// This method inserts or updates hourly statistics about stack compute units in the `stats_stacks` table.
     /// The timestamp is rounded down to the nearest hour, and if an entry already exists for that hour,
     /// the compute units are added to the existing total.
     ///
@@ -3375,10 +3375,10 @@ impl AtomaState {
             .and_then(|t| t.with_nanosecond(0))
             .ok_or(AtomaStateManagerError::InvalidTimestamp)?;
         sqlx::query(
-            "INSERT into stats_stack (timestamp,num_compute_units) SET ($1,$2)
+            "INSERT into stats_stacks (timestamp,num_compute_units) VALUES ($1,$2)
                  ON CONFLICT (timestamp) 
                  DO UPDATE SET 
-                    num_compute_units = stats_stack.num_compute_units + EXCLUDED.num_compute_units",
+                    num_compute_units = stats_stacks.num_compute_units + EXCLUDED.num_compute_units",
         )
         .bind(timestamp)
         .bind(stack.num_compute_units)
