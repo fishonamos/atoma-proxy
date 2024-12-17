@@ -41,9 +41,13 @@ use crate::server::handlers::{
 use crate::sui::Sui;
 
 use super::components;
-use super::handlers::chat_completions::CONFIDENTIAL_CHAT_COMPLETIONS_PATH;
-use super::handlers::embeddings::CONFIDENTIAL_EMBEDDINGS_PATH;
-use super::handlers::image_generations::CONFIDENTIAL_IMAGE_GENERATIONS_PATH;
+use super::handlers::chat_completions::{
+    confidential_chat_completions_handler, CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
+};
+use super::handlers::embeddings::{confidential_embeddings_handler, CONFIDENTIAL_EMBEDDINGS_PATH};
+use super::handlers::image_generations::{
+    confidential_image_generations_handler, CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
+};
 use super::middleware::{authenticate_middleware, confidential_compute_middleware};
 use super::AtomaServiceConfig;
 
@@ -469,12 +473,15 @@ pub fn create_router(state: ProxyState) -> Router {
     let confidential_router = Router::new()
         .route(
             CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
-            post(chat_completions_handler),
+            post(confidential_chat_completions_handler),
         )
-        .route(CONFIDENTIAL_EMBEDDINGS_PATH, post(embeddings_handler))
+        .route(
+            CONFIDENTIAL_EMBEDDINGS_PATH,
+            post(confidential_embeddings_handler),
+        )
         .route(
             CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
-            post(image_generations_handler),
+            post(confidential_image_generations_handler),
         )
         .layer(
             ServiceBuilder::new()
