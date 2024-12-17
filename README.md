@@ -86,7 +86,6 @@ database_url = "postgresql://POSTGRES_USER:POSTGRES_PASSWORD@db:5432/POSTGRES_DB
 
 [atoma_service]
 service_bind_address = "0.0.0.0:8080" # Address to bind the service to
-password = "password" # Password for the service
 models = [
   "meta-llama/Llama-3.2-3B-Instruct",
   "meta-llama/Llama-3.2-1B-Instruct",

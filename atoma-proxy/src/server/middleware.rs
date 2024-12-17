@@ -459,7 +459,7 @@ pub(crate) mod auth {
     ///
     /// # Arguments
     ///
-    /// * `state` - The proxy state containing password, models, and other shared state
+    /// * `state` - The proxy state containing models, and other shared state
     /// * `headers` - Request headers containing authorization
     /// * `payload` - Request payload containing model and token information
     ///
@@ -566,11 +566,11 @@ pub(crate) mod auth {
     /// Checks the authentication of the request.
     ///
     /// This function checks the authentication of the request by comparing the
-    /// provided password with the `Authorization` header in the request.
+    /// provided Bearer token from the `Authorization` header against the stored tokens.
     ///
     /// # Arguments
     ///
-    /// * `password`: The password to check against.
+    /// * `state_manager_sender`: The sender for the state manager channel.
     /// * `headers`: The headers of the request.
     ///
     /// # Returns
