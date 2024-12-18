@@ -98,7 +98,7 @@ pub(crate) struct ChatCompletionsOpenApi;
     responses(
         (status = OK, description = "Chat completions", content(
             (ChatCompletionResponse = "application/json"),
-            (ChatCompletionChunk = "text/event-stream")
+            //(ChatCompletionChunk = "text/event-stream")
         )),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),

@@ -182,9 +182,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatCompletionResponse'
-            text/event-stream:
-              schema:
-                $ref: '#/components/schemas/ChatCompletionChunk'
         '400':
           description: Bad request
         '401':
