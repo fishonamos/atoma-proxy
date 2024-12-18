@@ -1,6 +1,9 @@
 use axum::Router;
 use serde_json::json;
-use utoipa::{Modify, OpenApi};
+use utoipa::{
+    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
+    Modify, OpenApi,
+};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::server::handlers::chat_completions::{
@@ -25,7 +28,7 @@ use crate::server::http_server::{
 pub fn openapi_routes() -> Router {
     #[derive(OpenApi)]
     #[openapi(
-        modifiers(&SpeakeasyExtension),
+        modifiers(&SpeakeasyExtension, &SecurityAddon),
         nest(
             (path = HEALTH_PATH, api = HealthOpenApi, tags = ["Health"]),
             (path = MODELS_PATH, api = ModelsOpenApi, tags = ["Models"]),
@@ -92,6 +95,19 @@ pub fn openapi_routes() -> Router {
                     }
                 ]),
             );
+        }
+    }
+
+    struct SecurityAddon;
+
+    impl Modify for SecurityAddon {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            if let Some(components) = openapi.components.as_mut() {
+                components.add_security_scheme(
+                    "bearerAuth",
+                    SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+                )
+            }
         }
     }
 
