@@ -94,6 +94,8 @@ paths:
               schema: {}
         '500':
           description: Failed to retrieve list of available models
+      security:
+      - bearerAuth: []
   /node/registration:
     post:
       tags:
@@ -189,6 +191,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
   /v1/confidential/chat/completions:
     post:
       tags:
@@ -269,6 +273,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
   /v1/embeddings:
     post:
       tags:
@@ -314,6 +320,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
   /v1/confidential/embeddings:
     post:
       tags:
@@ -360,6 +368,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
   /v1/images/generations:
     post:
       tags:
@@ -411,6 +421,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
   /v1/confidential/images/generations:
     post:
       tags:
@@ -457,6 +469,8 @@ paths:
           description: Unauthorized
         '500':
           description: Internal server error
+      security:
+      - bearerAuth: []
 components:
   schemas:
     ChatCompletionChoice:
@@ -483,18 +497,25 @@ components:
       type: object
       required:
       - id
-      - data
+      - created
+      - model
+      - choices
       properties:
-        data:
+        choices:
           type: array
           items:
             $ref: '#/components/schemas/ChatCompletionChunkChoice'
-          description: |-
-            The Unix timestamp (in seconds) of when the chunk was created.
-            A list of chat completion chunk choices.
+          description: A list of chat completion chunk choices.
+        created:
+          type: integer
+          format: int64
+          description: The Unix timestamp (in seconds) of when the chunk was created.
         id:
           type: string
           description: A unique identifier for the chat completion chunk.
+        model:
+          type: string
+          description: The model used for the chat completion.
     ChatCompletionChunkChoice:
       type: object
       required:
@@ -882,6 +903,10 @@ components:
           type: string
         url:
           type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
 tags:
 - name: Health
   description: Health check

@@ -872,13 +872,13 @@ pub struct ChatCompletionChunk {
     pub id: String,
 
     /// The Unix timestamp (in seconds) of when the chunk was created.
-    // pub created: i64,
+    pub created: i64,
 
-    // /// The model used for the chat completion.
-    // pub model: String,
+    /// The model used for the chat completion.
+    pub model: String,
 
     /// A list of chat completion chunk choices.
-    pub data: Vec<ChatCompletionChunkChoice>,
+    pub choices: Vec<ChatCompletionChunkChoice>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
