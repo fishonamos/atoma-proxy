@@ -2,6 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use atoma_auth::{AtomaAuthConfig, Auth};
+use atoma_p2p::{AtomaP2pConfig, AtomaP2pNode};
 use atoma_proxy_service::{run_proxy_service, AtomaProxyServiceConfig, ProxyServiceState};
 use atoma_state::{AtomaState, AtomaStateManager, AtomaStateManagerConfig};
 use atoma_sui::AtomaSuiConfig;
@@ -128,6 +129,7 @@ async fn main() -> Result<()> {
     let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
     let (state_manager_sender, state_manager_receiver) = flume::unbounded();
+    let (atoma_p2p_sender, atoma_p2p_receiver) = flume::unbounded();
     let (confidential_compute_service_sender, _confidential_compute_service_receiver) =
         tokio::sync::mpsc::unbounded_channel();
 
@@ -144,11 +146,12 @@ async fn main() -> Result<()> {
 
     let sui = Sui::new(&config.sui).await?;
 
-    // Initialize your StateManager here
+    // Initialize the `AtomaStateManager` service
     let state_manager = AtomaStateManager::new_from_url(
         &config.state.database_url,
         event_subscriber_receiver,
         state_manager_receiver,
+        atoma_p2p_receiver,
     )
     .await?;
 

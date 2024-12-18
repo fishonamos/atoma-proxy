@@ -107,12 +107,15 @@ impl AtomaStateManager {
                 atoma_event = self.event_subscriber_receiver.recv_async() => {
                     match atoma_event {
                         Ok(atoma_event) => {
-                            tracing::trace!(
-                                target = "atoma-state-manager",
-                                event = "event_subscriber_receiver",
-                                "Event received from event subscriber receiver"
-                            );
-                            handle_atoma_event(atoma_event, &self).await?;
+                            if let Err(e) = handle_atoma_event(atoma_event, &self).await {
+                                tracing::error!(
+                                    target = "atoma-state-manager",
+                                    event = "atoma_event_error",
+                                    error = %e,
+                                    "Error handling Atoma event"
+                                );
+                                continue;
+                            }
                         }
                         Err(e) => {
                             tracing::error!(
@@ -128,7 +131,15 @@ impl AtomaStateManager {
                 state_manager_event = self.state_manager_receiver.recv_async() => {
                     match state_manager_event {
                         Ok(state_manager_event) => {
-                            handle_state_manager_event(&self, state_manager_event).await?;
+                            if let Err(e) = handle_state_manager_event(&self, state_manager_event).await {
+                                tracing::error!(
+                                    target = "atoma-state-manager",
+                                    event = "state_manager_event_error",
+                                    error = %e,
+                                    "Error handling state manager event"
+                                );
+                                continue;
+                            }
                         }
                         Err(e) => {
                             tracing::error!(
@@ -2762,12 +2773,20 @@ impl AtomaState {
         // with its available registration metadata (i.e. the `node_small_id`). The only exception
         // is the case when the node registration event was not received yet. In this case, we should
         // retry after some short delay.
+        //
+        // It might the (likely malicious) case that a node is publishing an url with a previous timestamp
+        // to overwrite the previous url. In this case, all the retries will fail, but this is probably
+        // fine.
         const NUM_RETRIES: i32 = 3;
         let mut retries = 0;
 
         loop {
             let result = sqlx::query(
-                "UPDATE nodes SET public_address = $2, timestamp = $3 WHERE node_small_id = $1",
+                "UPDATE nodes 
+                    SET public_address = $2, 
+                        timestamp = $3 
+                    WHERE node_small_id = $1 
+                    AND (timestamp IS NULL OR timestamp < $3)",
             )
             .bind(node_small_id)
             .bind(&public_url)
@@ -3530,15 +3549,13 @@ mod tests {
     }
 
     async fn insert_test_node(db: &sqlx::PgPool, node_small_id: i64) {
-        sqlx::query(
-            "INSERT INTO nodes (node_small_id, node_id, sui_address) VALUES ($1, $2, $3)",
-        )
-        .bind(node_small_id)
-        .bind("test_node_id")
-        .bind("test_sui_address")
-        .execute(db)
-        .await
-        .expect("Failed to insert test node");
+        sqlx::query("INSERT INTO nodes (node_small_id, node_id, sui_address) VALUES ($1, $2, $3)")
+            .bind(node_small_id)
+            .bind("test_node_id")
+            .bind("test_sui_address")
+            .execute(db)
+            .await
+            .expect("Failed to insert test node");
     }
 
     async fn get_node_public_url(db: &sqlx::PgPool, node_small_id: i64) -> Option<(String, i64)> {
@@ -3556,7 +3573,7 @@ mod tests {
     async fn test_register_node_public_url_success() {
         let state = setup_test_db().await;
         truncate_tables(&state.db).await;
-        
+
         // Insert test node
         insert_test_node(&state.db, 1).await;
 
@@ -3564,11 +3581,15 @@ mod tests {
         let timestamp = chrono::Utc::now().timestamp();
 
         // Test registration
-        let result = state.register_node_public_url(1, public_url.clone(), timestamp).await;
+        let result = state
+            .register_node_public_url(1, public_url.clone(), timestamp)
+            .await;
         assert!(result.is_ok(), "Registration should succeed");
 
         // Verify the registration
-        let stored_data = get_node_public_url(&state.db, 1).await.expect("Node should exist");
+        let stored_data = get_node_public_url(&state.db, 1)
+            .await
+            .expect("Node should exist");
         assert_eq!(stored_data.0, public_url);
         assert_eq!(stored_data.1, timestamp);
     }
@@ -3578,21 +3599,28 @@ mod tests {
     async fn test_register_node_public_url_update_existing() {
         let state = setup_test_db().await;
         truncate_tables(&state.db).await;
-        
+
         // Insert test node with initial URL
         insert_test_node(&state.db, 1).await;
         let initial_url = "https://initial.example.com".to_string();
         let initial_timestamp = chrono::Utc::now().timestamp();
-        state.register_node_public_url(1, initial_url, initial_timestamp).await.unwrap();
+        state
+            .register_node_public_url(1, initial_url, initial_timestamp)
+            .await
+            .unwrap();
 
         // Update with new URL
         let new_url = "https://updated.example.com".to_string();
         let new_timestamp = initial_timestamp + 3600; // 1 hour later
-        let result = state.register_node_public_url(1, new_url.clone(), new_timestamp).await;
+        let result = state
+            .register_node_public_url(1, new_url.clone(), new_timestamp)
+            .await;
         assert!(result.is_ok(), "URL update should succeed");
 
         // Verify the update
-        let stored_data = get_node_public_url(&state.db, 1).await.expect("Node should exist");
+        let stored_data = get_node_public_url(&state.db, 1)
+            .await
+            .expect("Node should exist");
         assert_eq!(stored_data.0, new_url);
         assert_eq!(stored_data.1, new_timestamp);
     }
@@ -3614,7 +3642,7 @@ mod tests {
 
         // Verify error and retry behavior
         assert!(matches!(result, Err(AtomaStateManagerError::NodeNotFound)));
-        
+
         // Verify that it took at least the expected retry time
         // 3 retries * 500ms = 1500ms minimum
         let elapsed = start_time.elapsed();
@@ -3641,12 +3669,19 @@ mod tests {
         // Attempt to register URL (should succeed after retry)
         let public_url = "https://delayed.example.com".to_string();
         let timestamp = chrono::Utc::now().timestamp();
-        let result = state.register_node_public_url(2, public_url.clone(), timestamp).await;
+        let result = state
+            .register_node_public_url(2, public_url.clone(), timestamp)
+            .await;
 
-        assert!(result.is_ok(), "Registration should succeed after node creation");
+        assert!(
+            result.is_ok(),
+            "Registration should succeed after node creation"
+        );
 
         // Verify the registration
-        let stored_data = get_node_public_url(&state.db, 2).await.expect("Node should exist");
+        let stored_data = get_node_public_url(&state.db, 2)
+            .await
+            .expect("Node should exist");
         assert_eq!(stored_data.0, public_url);
         assert_eq!(stored_data.1, timestamp);
     }
@@ -3656,7 +3691,7 @@ mod tests {
     async fn test_register_node_public_url_concurrent_updates() {
         let state = setup_test_db().await;
         truncate_tables(&state.db).await;
-        
+
         // Insert test node
         insert_test_node(&state.db, 3).await;
 
@@ -3666,7 +3701,7 @@ mod tests {
             let state_clone = state.clone();
             let url = format!("https://concurrent{}.example.com", i);
             let timestamp = chrono::Utc::now().timestamp() + i;
-            
+
             handles.push(tokio::spawn(async move {
                 state_clone
                     .register_node_public_url(3, url, timestamp)
@@ -3682,10 +3717,15 @@ mod tests {
             .collect();
 
         // Verify all updates succeeded
-        assert!(results.iter().all(|r| r.is_ok()), "All updates should succeed");
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "All updates should succeed"
+        );
 
         // Verify final state (should be the last update)
-        let stored_data = get_node_public_url(&state.db, 3).await.expect("Node should exist");
+        let stored_data = get_node_public_url(&state.db, 3)
+            .await
+            .expect("Node should exist");
         assert!(stored_data.0.starts_with("https://concurrent"));
     }
 
@@ -3694,21 +3734,27 @@ mod tests {
     async fn test_register_node_public_url_invalid_inputs() {
         let state = setup_test_db().await;
         truncate_tables(&state.db).await;
-        
+
         // Insert test node
         insert_test_node(&state.db, 4).await;
 
         // Test with empty URL
-        let result = state.register_node_public_url(4, "".to_string(), chrono::Utc::now().timestamp()).await;
+        let result = state
+            .register_node_public_url(4, "".to_string(), chrono::Utc::now().timestamp())
+            .await;
         assert!(result.is_ok(), "Empty URL should be allowed");
 
         // Test with very long URL (edge case)
         let long_url = "https://".to_string() + &"a".repeat(1000) + ".com";
-        let result = state.register_node_public_url(4, long_url, chrono::Utc::now().timestamp()).await;
+        let result = state
+            .register_node_public_url(4, long_url, chrono::Utc::now().timestamp())
+            .await;
         assert!(result.is_ok(), "Long URL should be allowed");
 
         // Test with negative timestamp
-        let result = state.register_node_public_url(4, "https://test.com".to_string(), -1).await;
+        let result = state
+            .register_node_public_url(4, "https://test.com".to_string(), -1)
+            .await;
         assert!(result.is_ok(), "Negative timestamp should be allowed");
     }
 }
