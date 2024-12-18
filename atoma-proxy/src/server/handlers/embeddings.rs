@@ -135,6 +135,9 @@ impl RequestModel for RequestModelEmbeddings {
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Embeddings generated successfully", body = CreateEmbeddingResponse),
         (status = BAD_REQUEST, description = "Bad request"),
@@ -212,6 +215,9 @@ pub(crate) struct ConfidentialEmbeddingsOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Confidential embeddings generated successfully", body = CreateEmbeddingResponse),
         (status = BAD_REQUEST, description = "Bad request"),

@@ -207,6 +207,9 @@ pub(crate) struct ModelsOpenApi;
 #[utoipa::path(
     get,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "List of available models", body = Value),
         (status = INTERNAL_SERVER_ERROR, description = "Failed to retrieve list of available models")
