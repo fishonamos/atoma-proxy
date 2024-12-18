@@ -268,6 +268,7 @@ impl AtomaState {
         if is_confidential {
             query.push_str(
                 r#"
+                AND tasks.security_level = 2
                 AND node_public_keys.is_valid = true"#,
             );
         }
