@@ -241,36 +241,57 @@ impl AtomaState {
         &self,
         model: &str,
         free_units: i64,
-        owner: String,
         user_id: i64,
-    ) -> Result<Vec<Stack>> {
+        is_confidential: bool,
+    ) -> Result<Option<Stack>> {
         // TODO: filter also by security level and other constraints
-        let tasks = sqlx::query(
-            "WITH selected_stack AS (
+        let mut query = String::from(
+            r#"
+            WITH selected_stack AS (
                 SELECT stacks.stack_small_id
                 FROM stacks
-                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id"#,
+        );
+
+        if is_confidential {
+            query.push_str(r#"
+                INNER JOIN node_public_keys ON node_public_keys.node_small_id = stacks.node_small_id"#);
+        }
+
+        query.push_str(
+            r#"
                 WHERE tasks.model_name = $1
                 AND stacks.num_compute_units - stacks.already_computed_units >= $2
-                AND stacks.owner = $3
-                AND stacks.user_id = $4
+                AND stacks.user_id = $3"#,
+        );
+
+        if is_confidential {
+            query.push_str(
+                r#"
+                AND tasks.security_level = 2
+                AND node_public_keys.is_valid = true"#,
+            );
+        }
+
+        query.push_str(
+            r#"
                 LIMIT 1
             )
             UPDATE stacks
             SET already_computed_units = already_computed_units + $2
             WHERE stack_small_id IN (SELECT stack_small_id FROM selected_stack)
-            RETURNING stacks.*",
-        )
-        .bind(model)
-        .bind(free_units)
-        .bind(owner)
-        .bind(user_id)
-        .fetch_all(&self.db)
-        .await?;
-        tasks
-            .into_iter()
-            .map(|task| Stack::from_row(&task).map_err(AtomaStateManagerError::from))
-            .collect()
+            RETURNING stacks.*"#,
+        );
+
+        let stack = sqlx::query(&query)
+            .bind(model)
+            .bind(free_units)
+            .bind(user_id)
+            .fetch_optional(&self.db)
+            .await?
+            .map(|stack| Stack::from_row(&stack).map_err(AtomaStateManagerError::from))
+            .transpose()?;
+        Ok(stack)
     }
 
     /// Get tasks for model.
@@ -2734,18 +2755,21 @@ impl AtomaState {
         epoch: i64,
         new_public_key: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
+        is_valid: bool,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes) VALUES ($1, $2, $3, $4)
+            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (node_small_id)
                 DO UPDATE SET epoch = $2, 
                               public_key = $3, 
-                              tee_remote_attestation_bytes = $4",
+                              tee_remote_attestation_bytes = $4,
+                              is_valid = $5",
         )
         .bind(node_id)
         .bind(epoch)
         .bind(new_public_key)
         .bind(tee_remote_attestation_bytes)
+        .bind(is_valid)
         .execute(&self.db)
         .await?;
         Ok(())
@@ -3389,4 +3413,14 @@ pub enum AtomaStateManagerError {
     InvalidTimestamp,
     #[error("Failed to run migrations")]
     FailedToRunMigrations(#[from] sqlx::migrate::MigrateError),
+    #[error("Failed to verify quote: `{0}`")]
+    FailedToVerifyQuote(String),
+    #[error("Failed to parse quote: `{0}`")]
+    FailedToParseQuote(String),
+    #[error("Unix time went backwards: `{0}`")]
+    UnixTimeWentBackwards(String),
+    #[error("Failed to retrieve collateral: `{0}`")]
+    FailedToRetrieveCollateral(String),
+    #[error("Failed to retrieve fmspc: `{0}`")]
+    FailedToRetrieveFmspc(String),
 }

@@ -487,6 +487,7 @@ pub(crate) mod auth {
         state: &ProxyState,
         headers: HeaderMap,
         payload: &Value,
+        is_confidential: bool,
     ) -> Result<ProcessedRequest, StatusCode> {
         // Authenticate
         let user_id = check_auth(&state.state_manager_sender, &headers).await?;
@@ -506,6 +507,7 @@ pub(crate) mod auth {
             &state.sui,
             total_compute_units,
             user_id,
+            is_confidential,
         )
         .await?;
 
@@ -684,6 +686,7 @@ pub(crate) mod auth {
         sui: &Arc<RwLock<Sui>>,
         total_tokens: u64,
         user_id: i64,
+        is_confidential: bool,
     ) -> Result<SelectedNodeMetadata, StatusCode> {
         let (result_sender, result_receiver) = oneshot::channel();
 
@@ -691,16 +694,8 @@ pub(crate) mod auth {
             .send(AtomaAtomaStateManagerEvent::GetStacksForModel {
                 model: model.to_string(),
                 free_compute_units: total_tokens as i64,
-                owner: sui
-                    .write()
-                    .await
-                    .get_wallet_address()
-                    .map_err(|e| {
-                        error!("Failed to get wallet address: {:?}", e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?
-                    .to_string(),
                 user_id,
+                is_confidential,
                 result_sender,
             })
             .map_err(|err| {
@@ -708,7 +703,7 @@ pub(crate) mod auth {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        let stacks = result_receiver
+        let optional_stack = result_receiver
             .await
             .map_err(|err| {
                 error!("Failed to receive GetStacksForModel result: {:?}", err);
@@ -719,7 +714,13 @@ pub(crate) mod auth {
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        if stacks.is_empty() {
+        if let Some(stack) = optional_stack {
+            Ok(SelectedNodeMetadata {
+                stack_small_id: stack.stack_small_id,
+                selected_node_id: stack.selected_node_id,
+                tx_digest: None,
+            })
+        } else {
             let (result_sender, result_receiver) = oneshot::channel();
             state_manager_sender
                 .send(AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
@@ -785,12 +786,6 @@ pub(crate) mod auth {
                 stack_small_id,
                 selected_node_id,
                 tx_digest: Some(tx_digest),
-            })
-        } else {
-            Ok(SelectedNodeMetadata {
-                stack_small_id: stacks[0].stack_small_id,
-                selected_node_id: stacks[0].selected_node_id,
-                tx_digest: None,
             })
         }
     }
@@ -863,6 +858,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_CHAT_COMPLETIONS_PATH,
                 )
                 .await
             }
@@ -876,6 +872,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_EMBEDDINGS_PATH,
                 )
                 .await
             }
@@ -889,6 +886,7 @@ pub(crate) mod utils {
                     &state.0,
                     req_parts.headers.clone(),
                     body_json,
+                    endpoint == CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
                 )
                 .await
             }

@@ -334,13 +334,13 @@ pub enum AtomaAtomaStateManagerEvent {
         model: String,
         /// The minimum number of available compute units required
         free_compute_units: i64,
-        /// The owner/public key of the stacks to filter by
-        owner: String,
         /// The user id of the stacks to filter by
         user_id: i64,
+        /// Indicates whether the stacks are associated with confidential compute or not
+        is_confidential: bool,
         /// Channel to send back the list of matching stacks
         /// Returns Ok(Vec<Stack>) with matching stacks or an error if the query fails
-        result_sender: oneshot::Sender<Result<Vec<Stack>>>,
+        result_sender: oneshot::Sender<Result<Option<Stack>>>,
     },
     /// Retrieves all tasks associated with a specific model
     GetTasksForModel {
