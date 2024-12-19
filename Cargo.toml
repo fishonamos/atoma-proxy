@@ -36,8 +36,8 @@ sqlx = { version = "0.8.2", features = [
   "postgres",
   "runtime-tokio-native-tls",
 ] }
-sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.39.1" }
-sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.39.1" }
+sui-keys = { git = "https://github.com/mystenlabs/sui", package = "sui-keys", tag = "testnet-v1.39.3" }
+sui-sdk = { git = "https://github.com/mystenlabs/sui", package = "sui-sdk", tag = "testnet-v1.39.3" }
 thiserror = "1.0.65"
 tokenizers = "0.20.3"
 tokio = "1.41.0"

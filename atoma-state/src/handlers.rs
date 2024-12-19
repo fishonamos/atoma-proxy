@@ -1,9 +1,9 @@
 use atoma_sui::events::{
-    AtomaEvent, NewStackSettlementAttestationEvent, NodePublicKeyCommittmentEvent,
-    NodeRegisteredEvent, NodeSubscribedToTaskEvent, NodeSubscriptionUpdatedEvent,
-    NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent, StackCreatedEvent,
-    StackSettlementTicketClaimedEvent, StackSettlementTicketEvent, StackTrySettleEvent,
-    TaskDeprecationEvent, TaskRegisteredEvent,
+    AtomaEvent, NewKeyRotationEvent, NewStackSettlementAttestationEvent,
+    NodePublicKeyCommittmentEvent, NodeRegisteredEvent, NodeSubscribedToTaskEvent,
+    NodeSubscriptionUpdatedEvent, NodeUnsubscribedFromTaskEvent, StackAttestationDisputeEvent,
+    StackCreatedEvent, StackSettlementTicketClaimedEvent, StackSettlementTicketEvent,
+    StackTrySettleEvent, TaskDeprecationEvent, TaskRegisteredEvent,
 };
 use chrono::{DateTime, Utc};
 use tracing::{info, instrument, trace};
@@ -69,8 +69,7 @@ pub async fn handle_atoma_event(
             handle_new_stack_settlement_attestation_event(state_manager, event).await
         }
         AtomaEvent::NewKeyRotationEvent(event) => {
-            info!("New key rotation event: {:?}", event);
-            Ok(())
+            handle_new_key_rotation_event(state_manager, event).await
         }
         AtomaEvent::NodePublicKeyCommittmentEvent(event) => {
             handle_node_key_rotation_event(state_manager, event).await
@@ -237,14 +236,14 @@ pub(crate) async fn handle_node_task_subscription_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .subscribe_node_to_task(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
@@ -288,14 +287,14 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .update_node_subscription(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
@@ -1082,6 +1081,56 @@ pub(crate) async fn handle_state_manager_event(
     Ok(())
 }
 
+/// Handles a new key rotation event by updating the key rotation state in the database.
+///
+/// This function processes a key rotation event that occurs when the system performs a periodic
+/// key rotation. It extracts the epoch and key rotation counter from the event and updates
+/// the corresponding values in the state database.
+///
+/// # Arguments
+///
+/// * `state_manager` - A reference to the `AtomaStateManager` for database operations
+/// * `event` - A `NewKeyRotationEvent` containing:
+///   * `epoch` - The epoch number when the key rotation occurred
+///   * `key_rotation_counter` - The counter tracking the number of key rotations
+///
+/// # Returns
+///
+/// * `Result<()>` - Ok(()) if the key rotation was processed successfully, or an error if something went wrong
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The database operation to update the key rotation state fails
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use atoma_state::AtomaStateManager;
+/// use atoma_sui::events::NewKeyRotationEvent;
+///
+/// async fn rotate_key(state_manager: &AtomaStateManager, event: NewKeyRotationEvent) {
+///     if let Err(e) = handle_new_key_rotation_event(state_manager, event).await {
+///         eprintln!("Failed to handle key rotation: {}", e);
+///     }
+/// }
+/// ```
+#[instrument(level = "trace", skip_all)]
+pub(crate) async fn handle_new_key_rotation_event(
+    state_manager: &AtomaStateManager,
+    event: NewKeyRotationEvent,
+) -> Result<()> {
+    let NewKeyRotationEvent {
+        epoch,
+        key_rotation_counter,
+    } = event;
+    state_manager
+        .state
+        .insert_new_key_rotation(epoch as i64, key_rotation_counter as i64)
+        .await?;
+    Ok(())
+}
+
 /// Handles a node key rotation event by updating the node's public key in the database.
 ///
 /// This function processes a node key rotation event, which occurs when a node updates its
@@ -1127,6 +1176,7 @@ pub(crate) async fn handle_node_key_rotation_event(
     info!("Node key rotation event: {:?}", event);
     let NodePublicKeyCommittmentEvent {
         epoch,
+        key_rotation_counter,
         node_id,
         new_public_key,
         tee_remote_attestation_bytes,
@@ -1140,6 +1190,7 @@ pub(crate) async fn handle_node_key_rotation_event(
         .update_node_public_key(
             node_id.inner as i64,
             epoch as i64,
+            key_rotation_counter as i64,
             new_public_key,
             tee_remote_attestation_bytes,
             is_valid,
