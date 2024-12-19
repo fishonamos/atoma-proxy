@@ -2960,8 +2960,7 @@ impl AtomaState {
         sqlx::query(
             "INSERT INTO key_rotations (epoch, key_rotation_counter) VALUES ($1, $2)
             ON CONFLICT (epoch)
-            DO UPDATE SET epoch = EXCLUDED.epoch,
-                          key_rotation_counter = EXCLUDED.key_rotation_counter",
+            DO UPDATE SET key_rotation_counter = EXCLUDED.key_rotation_counter",
         )
         .bind(epoch)
         .bind(key_rotation_counter)

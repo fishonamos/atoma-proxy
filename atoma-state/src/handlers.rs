@@ -236,14 +236,14 @@ pub(crate) async fn handle_node_task_subscription_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .subscribe_node_to_task(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
@@ -287,14 +287,14 @@ pub(crate) async fn handle_node_task_subscription_updated_event(
     );
     let node_small_id = event.node_small_id.inner as i64;
     let task_small_id = event.task_small_id.inner as i64;
-    let price_per_compute_unit = event.price_per_compute_unit as i64;
+    let price_per_one_million_compute_units = event.price_per_one_million_compute_units as i64;
     let max_num_compute_units = event.max_num_compute_units as i64;
     state_manager
         .state
         .update_node_subscription(
             node_small_id,
             task_small_id,
-            price_per_compute_unit,
+            price_per_one_million_compute_units,
             max_num_compute_units,
         )
         .await?;
