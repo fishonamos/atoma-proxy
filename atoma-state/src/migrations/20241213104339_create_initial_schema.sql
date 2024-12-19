@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS node_latency_performance (
 CREATE TABLE IF NOT EXISTS node_public_keys (
     node_small_id BIGINT PRIMARY KEY,
     epoch BIGINT NOT NULL,
+    key_rotation_counter BIGINT NOT NULL,
     public_key BYTEA NOT NULL,
     tee_remote_attestation_bytes BYTEA NOT NULL,
     is_valid BOOLEAN NOT NULL,

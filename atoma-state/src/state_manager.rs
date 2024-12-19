@@ -396,14 +396,22 @@ impl AtomaState {
         // TODO: benchmark this query performance
         let mut query = String::from(
             r#"
-            SELECT tasks.task_small_id, node_subscriptions.price_per_compute_unit, node_subscriptions.max_num_compute_units, node_subscriptions.node_small_id
+            WITH latest_rotation AS (
+                SELECT key_rotation_counter 
+                FROM key_rotations 
+                ORDER BY key_rotation_counter DESC 
+                LIMIT 1
+            )
+            SELECT tasks.task_small_id, node_subscriptions.price_per_compute_unit, 
+                node_subscriptions.max_num_compute_units, node_subscriptions.node_small_id
             FROM tasks
             INNER JOIN node_subscriptions ON tasks.task_small_id = node_subscriptions.task_small_id"#,
         );
 
         if is_confidential {
             query.push_str(r#"
-            INNER JOIN node_public_keys ON node_public_keys.node_small_id = node_subscriptions.node_small_id"#);
+            INNER JOIN node_public_keys ON node_public_keys.node_small_id = node_subscriptions.node_small_id
+            INNER JOIN latest_rotation ON latest_rotation.key_rotation_counter = node_public_keys.key_rotation_counter"#);
         }
 
         query.push_str(
@@ -2902,6 +2910,66 @@ impl AtomaState {
         Ok(())
     }
 
+    /// Records or updates a key rotation event for a specific epoch in the database.
+    ///
+    /// This method tracks cryptographic key rotation events by maintaining a counter for each epoch.
+    /// It uses an "upsert" operation, meaning it will either:
+    /// - Insert a new record if no rotation exists for the given epoch
+    /// - Update the existing record if a rotation was already recorded for that epoch
+    ///
+    /// # Arguments
+    ///
+    /// * `epoch` - The epoch number when the key rotation occurred
+    /// * `key_rotation_counter` - The cumulative number of key rotations that have occurred
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError))
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The database query fails to execute
+    /// - There's a connection issue with the database
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use atoma_node::atoma_state::AtomaStateManager;
+    ///
+    /// async fn rotate_keys(state_manager: &AtomaStateManager) -> Result<(), AtomaStateManagerError> {
+    ///     let current_epoch = 100;
+    ///     let rotation_counter = 5;
+    ///     
+    ///     state_manager.insert_new_key_rotation(current_epoch, rotation_counter).await
+    /// }
+    /// ```
+    ///
+    /// # Security Considerations
+    ///
+    /// This method is part of the system's cryptographic key management infrastructure and helps:
+    /// - Maintain an audit trail of key rotation events
+    /// - Verify compliance with key rotation policies
+    /// - Track the frequency of key rotations per epoch
+    #[instrument(level = "trace", skip_all, fields(%epoch, %key_rotation_counter))]
+    pub async fn insert_new_key_rotation(
+        &self,
+        epoch: i64,
+        key_rotation_counter: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO key_rotations (epoch, key_rotation_counter) VALUES ($1, $2)
+            ON CONFLICT (epoch)
+            DO UPDATE SET epoch = EXCLUDED.epoch,
+                          key_rotation_counter = EXCLUDED.key_rotation_counter",
+        )
+        .bind(epoch)
+        .bind(key_rotation_counter)
+        .execute(&self.db)
+        .await?;
+        Ok(())
+    }
+
     /// Updates or inserts a node's public key and associated information in the database.
     ///
     /// This method updates the `node_public_keys` table with new information for a specific node. If an entry
@@ -2951,20 +3019,23 @@ impl AtomaState {
         &self,
         node_id: i64,
         epoch: i64,
+        key_rotation_counter: i64,
         new_public_key: Vec<u8>,
         tee_remote_attestation_bytes: Vec<u8>,
         is_valid: bool,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) VALUES ($1, $2, $3, $4, $5)
+            "INSERT INTO node_public_keys (node_small_id, epoch, key_rotation_counter, public_key, tee_remote_attestation_bytes, is_valid) VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (node_small_id)
                 DO UPDATE SET epoch = $2, 
-                              public_key = $3, 
-                              tee_remote_attestation_bytes = $4,
-                              is_valid = $5",
+                              key_rotation_counter = $3,
+                              public_key = $4, 
+                              tee_remote_attestation_bytes = $5,
+                              is_valid = $6",
         )
         .bind(node_id)
         .bind(epoch)
+        .bind(key_rotation_counter)
         .bind(new_public_key)
         .bind(tee_remote_attestation_bytes)
         .bind(is_valid)
@@ -3647,7 +3718,8 @@ mod tests {
                 stack_settlement_tickets,
                 stack_attestation_disputes,
                 node_public_keys,
-                users
+                users,
+                key_rotations
             CASCADE",
         )
         .execute(db)
@@ -3676,6 +3748,20 @@ mod tests {
         .bind(0i64)
         .execute(pool)
         .await?;
+        Ok(())
+    }
+
+    /// Helper function to create a test key rotation
+    async fn create_key_rotation(
+        pool: &sqlx::PgPool,
+        epoch: i64,
+        key_rotation_counter: i64,
+    ) -> sqlx::Result<()> {
+        sqlx::query("INSERT INTO key_rotations (epoch, key_rotation_counter) VALUES ($1, $2)")
+            .bind(epoch)
+            .bind(key_rotation_counter)
+            .execute(pool)
+            .await?;
         Ok(())
     }
 
@@ -3721,12 +3807,13 @@ mod tests {
         is_valid: bool,
     ) -> sqlx::Result<()> {
         sqlx::query(
-            "INSERT INTO node_public_keys (node_small_id, public_key, is_valid, epoch, tee_remote_attestation_bytes)
-             VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO node_public_keys (node_small_id, public_key, is_valid, epoch, key_rotation_counter, tee_remote_attestation_bytes)
+             VALUES ($1, $2, $3, $4, $5, $6)"
         )
         .bind(node_small_id)
         .bind(vec![0u8; 32]) // dummy public key
         .bind(is_valid)
+        .bind(1i64)
         .bind(1i64)
         .bind(vec![0u8; 32]) // dummy attestation bytes
         .execute(pool)
@@ -3860,6 +3947,7 @@ mod tests {
 
         // Create test data for confidential computing
         create_test_task(&state.db, 1, "gpt-4", 2).await.unwrap();
+        create_key_rotation(&state.db, 1, 1).await.unwrap();
         create_test_node(&state.db, 1).await.unwrap();
         create_test_node_subscription(&state.db, 1, 1, 100, 1000)
             .await
@@ -4005,6 +4093,7 @@ mod tests {
         // Create tasks with different security levels
         create_test_task(&state.db, 1, "gpt-4", 1).await.unwrap();
         create_test_task(&state.db, 2, "gpt-4", 2).await.unwrap();
+        create_key_rotation(&state.db, 1, 1).await.unwrap();
 
         create_test_node(&state.db, 1).await.unwrap();
         create_test_node(&state.db, 2).await.unwrap();
@@ -4274,13 +4363,15 @@ mod tests {
         truncate_tables(&state.db).await;
 
         // Create test node
+        create_key_rotation(&state.db, 1, 1).await.unwrap();
         create_test_node(&state.db, 1).await?;
 
         // Insert test node public key
         sqlx::query(
-            r#"INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) 
-               VALUES ($1, $2, $3, $4, $5)"#,
+            r#"INSERT INTO node_public_keys (node_small_id, epoch, key_rotation_counter, public_key, tee_remote_attestation_bytes, is_valid) 
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
         )
+        .bind(1i64)
         .bind(1i64)
         .bind(1i64)
         .bind(vec![1u8, 2, 3, 4]) // Example public key bytes
@@ -4317,10 +4408,12 @@ mod tests {
         for i in 1..=3 {
             // Create test node
             create_test_node(&state.db, i).await?;
+            create_key_rotation(&state.db, i, i).await.unwrap();
             sqlx::query(
-                r#"INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) 
-                   VALUES ($1, $2, $3, $4, $5)"#,
+                r#"INSERT INTO node_public_keys (node_small_id, epoch, key_rotation_counter, public_key, tee_remote_attestation_bytes, is_valid) 
+                   VALUES ($1, $2, $3, $4, $5, $6)"#,
             )
+            .bind(i)
             .bind(i)
             .bind(i)
             .bind(vec![i as u8; 4]) // Different key for each node
@@ -4352,6 +4445,7 @@ mod tests {
 
         // Create test node
         create_test_node(&state.db, 1).await?;
+        create_key_rotation(&state.db, 1, 1).await.unwrap();
 
         // Test with negative node_small_id
         let result = state
@@ -4361,9 +4455,10 @@ mod tests {
 
         // Insert invalid public key (empty)
         sqlx::query(
-            r#"INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) 
-               VALUES ($1, $2, $3, $4, $5)"#,
+            r#"INSERT INTO node_public_keys (node_small_id, epoch, key_rotation_counter, public_key, tee_remote_attestation_bytes, is_valid) 
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
         )
+        .bind(1i64)
         .bind(1i64)
         .bind(1i64)
         .bind(Vec::<u8>::new()) // Empty public key
@@ -4392,12 +4487,14 @@ mod tests {
 
         // Create test node
         create_test_node(&state.db, 1).await?;
+        create_key_rotation(&state.db, 1, 1).await.unwrap();
 
         // Insert test data
         sqlx::query(
-            r#"INSERT INTO node_public_keys (node_small_id, epoch, public_key, tee_remote_attestation_bytes, is_valid) 
-               VALUES ($1, $2, $3, $4, $5)"#,
+            r#"INSERT INTO node_public_keys (node_small_id, epoch, key_rotation_counter, public_key, tee_remote_attestation_bytes, is_valid) 
+               VALUES ($1, $2, $3, $4, $5, $6)"#,
         )
+        .bind(1i64)
         .bind(1i64)
         .bind(1i64)
         .bind(vec![1u8, 2, 3, 4]) // Example public key bytes
