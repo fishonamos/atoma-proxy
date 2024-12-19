@@ -439,12 +439,11 @@ impl AtomaState {
     /// Selects a node's public key for encryption based on model requirements and compute capacity.
     ///
     /// This method queries the database to find the cheapest valid node that:
-    /// 1. Supports the specified model
-    /// 2. Has sufficient compute capacity for the requested number of tokens
-    /// 3. Has a valid public key for encryption
-    /// 4. Supports security level 2 (confidential computing)
+    /// 1. Has a valid public key for encryption
+    /// 2. Has an associated stack with sufficient remaining compute capacity
+    /// 3. Supports the specified model with security level 2 (confidential computing)
     ///
-    /// The nodes are ordered by price per compute unit, so the most cost-effective node meeting
+    /// The nodes are ordered by stack price, so the most cost-effective stack meeting
     /// all requirements will be selected.
     ///
     /// # Arguments
@@ -459,12 +458,18 @@ impl AtomaState {
     /// - `Ok(None)` - If no suitable node is found
     /// - `Err(AtomaStateManagerError)` - If a database error occurs
     ///
-    /// # Security
+    /// # Database Query Details
     ///
-    /// This method enforces several security requirements:
-    /// - Only returns nodes with security_level = 2 (confidential computing)
-    /// - Only returns nodes with valid public keys
-    /// - Only returns nodes with active subscriptions
+    /// The method joins three tables:
+    /// - `node_public_keys`: For encryption key information
+    /// - `stacks`: For compute capacity and pricing
+    /// - `tasks`: For model and security level verification
+    ///
+    /// The results are filtered to ensure:
+    /// - The stack supports the requested model
+    /// - The task requires security level 2 (confidential computing)
+    /// - The stack has sufficient remaining compute units
+    /// - The node's public key is valid
     ///
     /// # Example
     ///
@@ -473,7 +478,7 @@ impl AtomaState {
     /// # use sqlx::PgPool;
     ///
     /// async fn encrypt_for_node(state: &AtomaState) -> anyhow::Result<()> {
-    ///     // Find a node that can handle GPT-4 requests with up to 1000 tokens
+    ///     // Find a node that can handle GPT-4 requests with up to1000 tokens
     ///     let node_key = state.select_node_public_key_for_encryption("gpt-4", 1000).await?;
     ///     
     ///     if let Some(node_key) = node_key {
@@ -492,16 +497,15 @@ impl AtomaState {
     ) -> Result<Option<NodePublicKey>> {
         let node = sqlx::query(
             r#"
-            SELECT node_public_keys.public_key, node_subscriptions.node_small_id
-                FROM node_subscriptions
-                INNER JOIN node_public_keys ON node_public_keys.node_small_id = node_subscriptions.node_small_id
-                INNER JOIN tasks ON tasks.task_small_id = node_subscriptions.task_small_id
+            SELECT node_public_keys.public_key, node_public_keys.node_small_id
+                FROM node_public_keys
+                INNER JOIN stacks ON stacks.selected_node_id = node_public_keys.node_small_id
+                INNER JOIN tasks ON tasks.task_small_id = stacks.task_small_id
                 WHERE tasks.model_name = $1
                 AND tasks.security_level = 2
-                AND node_subscriptions.max_num_compute_units >= $2
-                AND node_subscriptions.valid = true
+                AND stacks.num_compute_units - stacks.already_computed_units >= $2
                 AND node_public_keys.is_valid = true
-                ORDER BY node_subscriptions.price_per_compute_unit ASC
+                ORDER BY stacks.price ASC
                 LIMIT 1
             "#,
         )
@@ -3642,7 +3646,8 @@ mod tests {
                 nodes,
                 stack_settlement_tickets,
                 stack_attestation_disputes,
-                node_public_keys
+                node_public_keys,
+                users
             CASCADE",
         )
         .execute(db)
@@ -3729,6 +3734,55 @@ mod tests {
         Ok(())
     }
 
+    /// Helper function to create a test stack
+    async fn create_test_stack(
+        pool: &sqlx::PgPool,
+        task_small_id: i64,
+        stack_small_id: i64,
+        node_small_id: i64,
+        price: i64,
+        num_compute_units: i64,
+        user_id: i64,
+    ) -> sqlx::Result<()> {
+        sqlx::query("INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3)")
+            .bind(user_id)
+            .bind(format!("test_user_{}", user_id)) // Create unique username
+            .bind("test_password_hash") // Default password hash
+            .execute(pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO stacks (
+                stack_small_id,
+                owner,
+                stack_id,
+                task_small_id,
+                selected_node_id,
+                num_compute_units,
+                price,
+                already_computed_units,
+                in_settle_period,
+                total_hash,
+                num_total_messages,
+                user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        )
+        .bind(stack_small_id)
+        .bind("test_owner") // Default test owner
+        .bind(Uuid::new_v4().to_string()) // Generate unique stack_id
+        .bind(task_small_id)
+        .bind(node_small_id)
+        .bind(num_compute_units)
+        .bind(price)
+        .bind(0i64) // Default already_computed_units
+        .bind(false) // Default in_settle_period
+        .bind(vec![0u8; 32]) // Default total_hash (32 bytes of zeros)
+        .bind(0i64) // Default num_total_messages
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn test_get_cheapest_node_basic() {
@@ -3739,6 +3793,9 @@ mod tests {
         create_test_task(&state.db, 1, "gpt-4", 1).await.unwrap();
         create_test_node(&state.db, 1).await.unwrap();
         create_test_node_subscription(&state.db, 1, 1, 100, 1000)
+            .await
+            .unwrap();
+        create_test_stack(&state.db, 1, 1, 1, 100, 1, 1000)
             .await
             .unwrap();
 
@@ -3767,15 +3824,23 @@ mod tests {
         create_test_node_subscription(&state.db, 1, 1, 100, 1000)
             .await
             .unwrap();
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
         create_test_node(&state.db, 2).await.unwrap();
         create_test_node_subscription(&state.db, 2, 1, 50, 1000)
+            .await
+            .unwrap();
+        create_test_stack(&state.db, 1, 2, 2, 50, 1000, 2)
             .await
             .unwrap();
         create_test_node(&state.db, 3).await.unwrap();
         create_test_node_subscription(&state.db, 3, 1, 150, 1000)
             .await
             .unwrap();
-
+        create_test_stack(&state.db, 1, 3, 3, 150, 1000, 3)
+            .await
+            .unwrap();
         // Should return the cheapest node
         let result = state
             .get_cheapest_node_for_model("gpt-4", false)
@@ -3802,7 +3867,9 @@ mod tests {
         create_test_node_public_key(&state.db, 1, true)
             .await
             .unwrap();
-
+        create_test_stack(&state.db, 1, 1, 1, 100, 1, 1000)
+            .await
+            .unwrap();
         // Test confidential computing requirements
         let result = state
             .get_cheapest_node_for_model("gpt-4", true)
@@ -3827,6 +3894,9 @@ mod tests {
             .await
             .unwrap();
         create_test_node_public_key(&state.db, 1, false)
+            .await
+            .unwrap();
+        create_test_stack(&state.db, 1, 1, 1, 100, 1, 1000)
             .await
             .unwrap();
 
@@ -3865,7 +3935,9 @@ mod tests {
         create_test_node_subscription(&state.db, 1, 1, 100, 1000)
             .await
             .unwrap();
-
+        create_test_stack(&state.db, 1, 1, 1, 100, 1, 1000)
+            .await
+            .unwrap();
         // Should return None for deprecated task
         let result = state
             .get_cheapest_node_for_model("gpt-4", false)
@@ -3897,6 +3969,10 @@ mod tests {
         .execute(&state.db)
         .await
         .unwrap();
+
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
 
         // Should return None for invalid subscription
         let result = state
@@ -3942,6 +4018,12 @@ mod tests {
         create_test_node_public_key(&state.db, 2, true)
             .await
             .unwrap();
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
+        create_test_stack(&state.db, 1, 2, 1, 50, 1000, 2)
+            .await
+            .unwrap();
 
         // Test non-confidential query (should return cheapest regardless of security level)
         let result = state
@@ -3981,7 +4063,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 1, 100, 1000).await?;
         create_test_node_public_key(&state.db, 1, true).await?;
-
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
         let result = state
             .select_node_public_key_for_encryption("gpt-4", 800)
             .await?;
@@ -4002,6 +4086,9 @@ mod tests {
             create_test_node(&state.db, node_id).await?;
             create_test_node_subscription(&state.db, node_id, 1, price, 1000).await?;
             create_test_node_public_key(&state.db, node_id, true).await?;
+            create_test_stack(&state.db, 1, node_id, node_id, price, 1000, node_id)
+                .await
+                .unwrap();
         }
 
         let result = state
@@ -4027,6 +4114,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 1, 100, 500).await?; // Insufficient capacity
         create_test_node_public_key(&state.db, 1, true).await?;
+        create_test_stack(&state.db, 1, 1, 1, 100, 500, 1)
+            .await
+            .unwrap();
 
         let result = state
             .select_node_public_key_for_encryption("gpt-4", 800)
@@ -4040,6 +4130,9 @@ mod tests {
         create_test_node(&state.db, 2).await?;
         create_test_node_subscription(&state.db, 2, 1, 100, 1000).await?;
         create_test_node_public_key(&state.db, 2, true).await?;
+        create_test_stack(&state.db, 1, 2, 2, 100, 1000, 2)
+            .await
+            .unwrap();
 
         let result = state
             .select_node_public_key_for_encryption("gpt-4", 800)
@@ -4062,6 +4155,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 1, 100, 1000).await?;
         create_test_node_public_key(&state.db, 1, false).await?;
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
 
         let result = state
             .select_node_public_key_for_encryption("gpt-4", 800)
@@ -4095,7 +4191,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 2, 100, 1000).await?;
         create_test_node_public_key(&state.db, 1, true).await?;
-
+        create_test_stack(&state.db, 2, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
         let result = state
             .select_node_public_key_for_encryption("gpt-4", 800)
             .await?;
@@ -4115,6 +4213,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 1, 100, 1000).await?;
         create_test_node_public_key(&state.db, 1, true).await?;
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
 
         // Test edge cases
         let test_cases = vec![
@@ -4148,7 +4249,9 @@ mod tests {
         create_test_node(&state.db, 1).await?;
         create_test_node_subscription(&state.db, 1, 1, 100, 1000).await?;
         create_test_node_public_key(&state.db, 1, true).await?;
-
+        create_test_stack(&state.db, 1, 1, 1, 100, 1000, 1)
+            .await
+            .unwrap();
         let futures: Vec<_> = (0..5)
             .map(|_| state.select_node_public_key_for_encryption("gpt-4", 800))
             .collect();

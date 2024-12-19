@@ -107,7 +107,6 @@ impl Sui {
         task_small_id: u64,
         num_compute_units: u64,
         price: u64,
-        node_small_id: Option<u64>,
     ) -> Result<StackEntryResponse> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
@@ -127,7 +126,6 @@ impl Sui {
                     SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(num_compute_units.to_string().into())?,
                     SuiJsonValue::new(price.to_string().into())?,
-                    SuiJsonValue::new(node_small_id.map(|n| vec![n]).into())?,
                     SuiJsonValue::from_object_id(SUI_RANDOMNESS_STATE_OBJECT_ID),
                 ],
                 None,

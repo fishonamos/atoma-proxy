@@ -161,19 +161,23 @@ pub(crate) async fn select_node_public_key(
                     node.task_small_id as u64,
                     node.max_num_compute_units as u64,
                     node.price_per_compute_unit as u64,
-                    Some(node.node_small_id as u64),
                 )
                 .await
                 .map_err(|e| {
                     error!("Failed to acquire new stack entry: {:?}", e);
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
+            // NOTE: The contract might select a different node than the one we used to extract
+            // the price per compute units. In this case, we need to update the value of the `node_small_id``
+            // to be the one selected by the contract, that we can query from the `StackCreatedEvent`.
+            let node_small_id = stack_entry_resp.stack_created_event.selected_node_id.inner;
+            // NOTE: We need to get the public key for the selected node for the acquired stack.
             let (sender, receiver) = oneshot::channel();
             state
                 .state_manager_sender
                 .send(
                     AtomaAtomaStateManagerEvent::SelectNodePublicKeyForEncryptionForNode {
-                        node_small_id: node.node_small_id,
+                        node_small_id: node_small_id as i64,
                         result_sender: sender,
                     },
                 )
