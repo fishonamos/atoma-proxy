@@ -3585,6 +3585,15 @@ impl AtomaState {
         .await?;
         Ok(())
     }
+
+    pub async fn store_sui_address(&self, user_id: i64, sui_address: String) -> Result<()> {
+        sqlx::query("UPDATE users SET sui_address = $1 WHERE id = $2")
+            .bind(sui_address)
+            .bind(user_id)
+            .execute(&self.db)
+            .await?;
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
