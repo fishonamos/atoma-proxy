@@ -725,6 +725,7 @@ pub(crate) mod auth {
             state_manager_sender
                 .send(AtomaAtomaStateManagerEvent::GetCheapestNodeForModel {
                     model: model.to_string(),
+                    is_confidential,
                     result_sender,
                 })
                 .map_err(|err| {
@@ -759,6 +760,7 @@ pub(crate) mod auth {
                     node.task_small_id as u64,
                     node.max_num_compute_units as u64,
                     node.price_per_compute_unit as u64,
+                    None,
                 )
                 .await
                 .map_err(|err| {
