@@ -92,8 +92,14 @@ pub(crate) struct ChatCompletionsOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
-        (status = OK, description = "Chat completions", body = ChatCompletionResponse),
+        (status = OK, description = "Chat completions", content(
+            (ChatCompletionResponse = "application/json"),
+            //(ChatCompletionChunk = "text/event-stream")
+        )),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
@@ -246,6 +252,9 @@ pub(crate) struct ConfidentialChatCompletionsOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Confidential chat completions", body = ChatCompletionResponse),
         (status = BAD_REQUEST, description = "Bad request"),

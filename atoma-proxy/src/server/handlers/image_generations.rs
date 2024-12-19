@@ -141,6 +141,9 @@ impl RequestModel for RequestModelImageGenerations {
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Image generations", body = CreateImageResponse),
         (status = BAD_REQUEST, description = "Bad request"),
@@ -207,6 +210,9 @@ pub(crate) struct ConfidentialImageGenerationsOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    security(
+        ("bearerAuth" = [])
+    ),
     responses(
         (status = OK, description = "Image generations", body = CreateImageResponse),
         (status = BAD_REQUEST, description = "Bad request"),
