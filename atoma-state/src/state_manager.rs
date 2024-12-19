@@ -393,9 +393,10 @@ impl AtomaState {
         model: &str,
         is_confidential: bool,
     ) -> Result<Option<CheapestNode>> {
+        // TODO: benchmark this query performance
         let mut query = String::from(
             r#"
-            SELECT tasks.task_small_id, price_per_compute_unit, max_num_compute_units, node_subscriptions.node_small_id
+            SELECT tasks.task_small_id, node_subscriptions.price_per_compute_unit, node_subscriptions.max_num_compute_units, node_subscriptions.node_small_id
             FROM tasks
             INNER JOIN node_subscriptions ON tasks.task_small_id = node_subscriptions.task_small_id"#,
         );
@@ -428,7 +429,6 @@ impl AtomaState {
 
         let node_settings = sqlx::query(&query)
             .bind(model)
-            .bind(false)
             .fetch_optional(&self.db)
             .await?;
         Ok(node_settings

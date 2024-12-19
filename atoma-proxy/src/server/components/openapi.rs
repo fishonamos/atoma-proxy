@@ -43,7 +43,7 @@ pub fn openapi_routes() -> Router {
             (path = CONFIDENTIAL_EMBEDDINGS_PATH, api = ConfidentialEmbeddingsOpenApi, tags = ["Confidential Embeddings"]),
             (path = IMAGE_GENERATIONS_PATH, api = ImageGenerationsOpenApi, tags = ["Images"]),
             (path = CONFIDENTIAL_IMAGE_GENERATIONS_PATH, api = ConfidentialImageGenerationsOpenApi, tags = ["Confidential Images"]),
-            (path = ENCRYPTION_PUBLIC_KEY_ENDPOINT, api = SelectNodePublicKeyOpenApi, tags = ["Node Public Key Selection"])
+            (path = ENCRYPTION_PUBLIC_KEY_ENDPOINT, api = SelectNodePublicKeyOpenApi, tags = ["Confidential Node Public Key Selection"])
         ),
         tags(
             (name = "Health", description = "Health check"),
