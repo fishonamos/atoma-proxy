@@ -38,6 +38,9 @@ pub struct AuthResponse {
     pub refresh_token: String,
 }
 
+/// Request payload for updating the sui address for the user.
+///
+/// Contains the signature of the user to prove ownership of the sui address.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ProofRequest {
     pub signature: String,

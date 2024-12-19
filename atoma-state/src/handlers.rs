@@ -1084,7 +1084,7 @@ pub(crate) async fn handle_state_manager_event(
         } => {
             state_manager
                 .state
-                .store_sui_address(user_id, sui_address)
+                .update_sui_address(user_id, sui_address)
                 .await?;
         }
     }
