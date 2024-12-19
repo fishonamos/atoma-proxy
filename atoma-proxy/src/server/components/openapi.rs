@@ -13,9 +13,12 @@ use crate::server::handlers::image_generations::{
     ConfidentialImageGenerationsOpenApi, CONFIDENTIAL_IMAGE_GENERATIONS_PATH,
 };
 use crate::server::handlers::{
-    chat_completions::ChatCompletionsOpenApi, chat_completions::CHAT_COMPLETIONS_PATH,
-    embeddings::EmbeddingsOpenApi, embeddings::EMBEDDINGS_PATH,
-    image_generations::ImageGenerationsOpenApi, image_generations::IMAGE_GENERATIONS_PATH,
+    chat_completions::ChatCompletionsOpenApi,
+    chat_completions::CHAT_COMPLETIONS_PATH,
+    embeddings::EmbeddingsOpenApi,
+    embeddings::EMBEDDINGS_PATH,
+    image_generations::ImageGenerationsOpenApi,
+    image_generations::IMAGE_GENERATIONS_PATH,
     select_node_public_key::{SelectNodePublicKeyOpenApi, ENCRYPTION_PUBLIC_KEY_ENDPOINT},
 };
 use crate::server::http_server::{
