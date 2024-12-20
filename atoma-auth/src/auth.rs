@@ -393,9 +393,12 @@ impl Auth {
         let intent_msg = IntentMessage::new(
             Intent::personal_message(),
             PersonalMessage {
-                message: "Sign this message to prove you are the owner of this wallet"
-                    .as_bytes()
-                    .to_vec(),
+                message: format!(
+                    "Sign this message to prove you are the owner of this wallet. User ID: {}",
+                    claims.user_id
+                )
+                .as_bytes()
+                .to_vec(),
             },
         );
 

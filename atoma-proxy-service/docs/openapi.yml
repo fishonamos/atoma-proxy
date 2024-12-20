@@ -442,6 +442,10 @@ components:
           description: The user's unique identifier
     ProofRequest:
       type: object
+      description: |-
+        Request payload for updating the sui address for the user.
+
+        Contains the signature of the user to prove ownership of the sui address.
       required:
       - signature
       properties:
