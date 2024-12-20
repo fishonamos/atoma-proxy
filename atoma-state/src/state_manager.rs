@@ -3802,6 +3802,7 @@ impl AtomaState {
     ///    state_manager.update_balance(user_id, balance).await
     /// }
     /// ```
+    #[instrument(level = "trace", skip(self))]
     pub async fn update_balance(&self, user_id: i64, balance: i64, timestamp: i64) -> Result<()> {
         sqlx::query(
             "INSERT INTO balance (user_id, usdc_balance, usdc_last_timestamp) 

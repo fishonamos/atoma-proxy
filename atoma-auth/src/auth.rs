@@ -463,6 +463,7 @@ impl Auth {
     /// * If the payment is not for this user
     /// * If the user is not found
     /// * If the user balance is not updated
+    #[instrument(level = "info", skip(self))]
     pub async fn usdc_payment(&self, jwt: &str, transaction_digest: &str) -> Result<()> {
         let claims = self.validate_token(jwt, false)?;
 
