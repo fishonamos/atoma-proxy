@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 
 use anyhow::Result;
 use atoma_sui::{events::StackCreatedEvent, AtomaSuiConfig};
@@ -10,7 +10,7 @@ use serde_json::Value;
 use sui_keys::keystore::{AccountKeystore, Keystore};
 use sui_sdk::{
     json::SuiJsonValue,
-    rpc_types::Page,
+    rpc_types::{BalanceChange, Page, SuiTransactionBlockResponseOptions},
     types::{
         base_types::{ObjectID, SuiAddress},
         crypto::EncodeDecodeBase64,
@@ -249,5 +249,39 @@ impl Sui {
                     Double check that your address owns TOMA coins and try again."
                 )
             })
+    }
+
+    /// Get the balance changes for a given transaction digest
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction_digest` - The transaction digest for which to get the balance changes
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing the timestamp of the transaction and the balance changes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transaction digest is invalid or if the transaction is not found
+    /// or if the balance changes are not found.
+    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
+    pub async fn get_balance_changes(
+        &self,
+        transaction_digest: &str,
+    ) -> Result<(Option<u64>, Option<Vec<BalanceChange>>)> {
+        let transaction_digest = TransactionDigest::from_str(transaction_digest).unwrap();
+        let client = self.wallet_ctx.get_client().await?;
+        let transaction = client
+            .read_api()
+            .get_transaction_with_options(
+                transaction_digest,
+                SuiTransactionBlockResponseOptions {
+                    show_balance_changes: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok((transaction.timestamp_ms, transaction.balance_changes))
     }
 }

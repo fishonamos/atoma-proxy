@@ -419,6 +419,8 @@ pub async fn confidential_compute_middleware(
 pub(crate) mod auth {
     use std::sync::Arc;
 
+    use atoma_auth::StackEntryResponse;
+    use atoma_auth::Sui;
     use atoma_state::{timestamp_to_datetime_or_now, types::AtomaAtomaStateManagerEvent};
     use axum::http::HeaderMap;
     use flume::Sender;
@@ -428,10 +430,7 @@ pub(crate) mod auth {
     use tokio::sync::{oneshot, RwLock};
     use tracing::{error, instrument};
 
-    use crate::{
-        server::{handlers::request_model::RequestModel, http_server::ProxyState},
-        sui::{StackEntryResponse, Sui},
-    };
+    use crate::server::{handlers::request_model::RequestModel, http_server::ProxyState};
 
     /// Represents the processed and validated request data after authentication and initial processing.
     ///

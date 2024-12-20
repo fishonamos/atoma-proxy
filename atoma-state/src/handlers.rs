@@ -1086,6 +1086,34 @@ pub(crate) async fn handle_state_manager_event(
                 .update_sui_address(user_id, sui_address)
                 .await?;
         }
+        AtomaAtomaStateManagerEvent::GetSuiAddress {
+            user_id,
+            result_sender,
+        } => {
+            let sui_address = state_manager.state.get_sui_address(user_id).await;
+            result_sender
+                .send(sui_address)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
+        AtomaAtomaStateManagerEvent::GetUserId {
+            sui_address,
+            result_sender,
+        } => {
+            let user_id = state_manager.state.get_user_id(sui_address).await;
+            result_sender
+                .send(user_id)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
+        }
+        AtomaAtomaStateManagerEvent::UpdateBalance {
+            user_id,
+            amount,
+            timestamp,
+        } => {
+            state_manager
+                .state
+                .update_balance(user_id, amount, timestamp)
+                .await?;
+        }
     }
     Ok(())
 }
