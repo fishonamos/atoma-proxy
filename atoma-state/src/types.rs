@@ -582,9 +582,15 @@ pub enum AtomaAtomaStateManagerEvent {
         result_sender: oneshot::Sender<Result<Option<i64>>>,
     },
     /// Updates the balance of a user
-    UpdateBalance {
+    TopUpBalance {
         user_id: i64,
         amount: i64,
         timestamp: i64,
+    },
+    /// Withdraws the balance of a user
+    WithdrawBalance {
+        user_id: i64,
+        amount: i64,
+        result_sender: oneshot::Sender<Result<()>>,
     },
 }

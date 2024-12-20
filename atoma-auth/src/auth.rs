@@ -522,13 +522,39 @@ impl Auth {
             }
             // We are the receiver and we know the sender
             self.state_manager_sender
-                .send(AtomaAtomaStateManagerEvent::UpdateBalance {
+                .send(AtomaAtomaStateManagerEvent::TopUpBalance {
                     user_id,
                     amount: money_in.unwrap() as i64,
                     timestamp: timestamp as i64,
                 })?;
         }
         Ok(())
+    }
+
+    /// Get the Sui address for the user
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt` - The access token to be used to get the Sui address
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Option<String>>` - The Sui address
+    ///
+    /// # Errors
+    ///
+    /// * If the verification fails
+    pub async fn get_sui_address(&self, jwt: &str) -> Result<Option<String>> {
+        let claims = self.validate_token(jwt, false)?;
+        let (result_sender, result_receiver) = oneshot::channel();
+        self.state_manager_sender
+            .send(AtomaAtomaStateManagerEvent::GetSuiAddress {
+                user_id: claims.user_id,
+                result_sender,
+            })?;
+        let sui_address = result_receiver.await;
+        dbg!(&sui_address);
+        Ok(sui_address??)
     }
 }
 

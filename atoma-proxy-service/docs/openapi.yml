@@ -228,6 +228,30 @@ paths:
           description: Failed to usdc payment request
       security:
       - bearerAuth: []
+  /get_sui_address:
+    get:
+      tags:
+      - Auth
+      summary: Retrieves the sui address for the user.
+      description: |-
+        # Arguments
+
+        * `proxy_service_state` - The shared state containing the state manager
+        * `headers` - The headers of the request
+
+        # Returns
+
+        * `Result<Json<Option<String>>>` - A JSON response containing the sui address
+      operationId: get_sui_address
+      responses:
+        '200':
+          description: Retrieves the sui address for the user
+        '401':
+          description: Unauthorized request
+        '500':
+          description: Failed to get sui address
+      security:
+      - bearerAuth: []
   /stacks:
     get:
       tags:

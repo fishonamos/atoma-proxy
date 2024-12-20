@@ -748,6 +748,29 @@ pub(crate) mod auth {
                     return Err(StatusCode::NOT_FOUND);
                 }
             };
+            // This will fail if the balance is not enough.
+            let (result_sender, result_receiver) = oneshot::channel();
+            state_manager_sender
+                .send(AtomaAtomaStateManagerEvent::WithdrawBalance {
+                    user_id,
+                    amount: (node.price_per_compute_unit * node.max_num_compute_units) as i64,
+                    result_sender,
+                })
+                .map_err(|err| {
+                    error!("Failed to update balance: {:?}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            result_receiver
+                .await
+                .map_err(|err| {
+                    error!("Failed to receive WithdrawBalance result: {:?}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .map_err(|err| {
+                    error!("Failed to get WithdrawBalance result {:?}", err);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
             let StackEntryResponse {
                 transaction_digest: tx_digest,
                 stack_created_event: event,

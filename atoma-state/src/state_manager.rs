@@ -3726,12 +3726,13 @@ impl AtomaState {
     /// ```
     #[instrument(level = "trace", skip(self))]
     pub async fn get_sui_address(&self, user_id: i64) -> Result<Option<String>> {
-        let user = sqlx::query("SELECT sui_address FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&self.db)
-            .await?;
+        let sui_address =
+            sqlx::query_scalar::<_, Option<String>>("SELECT sui_address FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(&self.db)
+                .await?;
 
-        Ok(user.map(|user| user.get("sui_address")))
+        Ok(sui_address.flatten())
     }
 
     /// Retrieves the user id for the user.
@@ -3803,7 +3804,7 @@ impl AtomaState {
     /// }
     /// ```
     #[instrument(level = "trace", skip(self))]
-    pub async fn update_balance(&self, user_id: i64, balance: i64, timestamp: i64) -> Result<()> {
+    pub async fn top_up_balance(&self, user_id: i64, balance: i64, timestamp: i64) -> Result<()> {
         sqlx::query(
             "INSERT INTO balance (user_id, usdc_balance, usdc_last_timestamp) 
                          VALUES ($1, $2, $3) 
@@ -3818,6 +3819,33 @@ impl AtomaState {
         .bind(timestamp)
         .execute(&self.db)
         .await?;
+        Ok(())
+    }
+
+    /// Withdraw balance for the user.
+    ///
+    /// This method withdraws the balance from the user in the `users` table.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The unique identifier of the user.
+    /// * `balance` - The balance to withdraw from the user.
+    ///
+    /// # Returns
+    ///
+    /// - `Result<()>`: A result indicating success (Ok(())) or failure (Err(AtomaStateManagerError)).
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    ///
+    /// - The database query fails to execute (that could mean the balance is not available)
+    pub async fn withdraw_balance(&self, user_id: i64, balance: i64) -> Result<()> {
+        sqlx::query("UPDATE balance SET usdc_balance = usdc_balance - $2 WHERE user_id = $1")
+            .bind(user_id)
+            .bind(balance)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 }

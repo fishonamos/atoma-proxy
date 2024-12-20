@@ -23,6 +23,9 @@ use tracing::{error, info, instrument};
 
 const GAS_BUDGET: u64 = 5_000_000; // 0.005 SUI
 
+const USDC_COIN_TYPE: &str =
+    "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
+
 /// Response returned when acquiring a new stack entry
 ///
 /// This struct contains both the transaction digest of the stack entry creation
@@ -110,8 +113,19 @@ impl Sui {
     ) -> Result<StackEntryResponse> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
-        let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
+        // let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
 
+        let coins = client
+            .coin_read_api()
+            .get_coins(address, Some(USDC_COIN_TYPE.to_string()), None, None)
+            .await?;
+
+        // TODO: merge coins, I don't know yet how to do it in one transaction.
+        let max_coin = coins
+            .data
+            .into_iter()
+            .max_by_key(|coin| coin.balance)
+            .ok_or_else(|| anyhow::anyhow!("No coins found for the given address"))?;
         let tx = client
             .transaction_builder()
             .move_call(
@@ -122,7 +136,7 @@ impl Sui {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.atoma_db_id),
-                    SuiJsonValue::from_object_id(toma_wallet_id),
+                    SuiJsonValue::from_object_id(max_coin.coin_object_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(num_compute_units.to_string().into())?,
                     SuiJsonValue::new(price.to_string().into())?,
@@ -265,7 +279,7 @@ impl Sui {
     ///
     /// Returns an error if the transaction digest is invalid or if the transaction is not found
     /// or if the balance changes are not found.
-    #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
+    #[instrument(level = "info", skip(self))]
     pub async fn get_balance_changes(
         &self,
         transaction_digest: &str,

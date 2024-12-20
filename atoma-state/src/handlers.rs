@@ -1104,15 +1104,25 @@ pub(crate) async fn handle_state_manager_event(
                 .send(user_id)
                 .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
-        AtomaAtomaStateManagerEvent::UpdateBalance {
+        AtomaAtomaStateManagerEvent::TopUpBalance {
             user_id,
             amount,
             timestamp,
         } => {
             state_manager
                 .state
-                .update_balance(user_id, amount, timestamp)
+                .top_up_balance(user_id, amount, timestamp)
                 .await?;
+        }
+        AtomaAtomaStateManagerEvent::WithdrawBalance {
+            user_id,
+            amount,
+            result_sender,
+        } => {
+            let success = state_manager.state.withdraw_balance(user_id, amount).await;
+            result_sender
+                .send(success)
+                .map_err(|_| AtomaStateManagerError::ChannelSendError)?;
         }
     }
     Ok(())
