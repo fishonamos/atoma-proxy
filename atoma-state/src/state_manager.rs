@@ -451,7 +451,7 @@ impl AtomaState {
     /// 2. Has an associated stack with sufficient remaining compute capacity
     /// 3. Supports the specified model with security level 2 (confidential computing)
     ///
-    /// The nodes are ordered by stack price, so the most cost-effective stack meeting
+    /// The nodes are ordered by each stac's price per one million compute units, so the most cost-effective stack meeting
     /// all requirements will be selected.
     ///
     /// # Arguments
@@ -1627,7 +1627,7 @@ impl AtomaState {
     pub async fn insert_new_stack(&self, stack: Stack, user_id: i64) -> Result<()> {
         sqlx::query(
             "INSERT INTO stacks 
-                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price, already_computed_units, in_settle_period, total_hash, num_total_messages, user_id) 
+                (owner, stack_small_id, stack_id, task_small_id, selected_node_id, num_compute_units, price_per_one_million_compute_units, already_computed_units, in_settle_period, total_hash, num_total_messages, user_id) 
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
             .bind(stack.owner)
@@ -3881,7 +3881,7 @@ mod tests {
                 task_small_id,
                 selected_node_id,
                 num_compute_units,
-                price,
+                price_per_one_million_compute_units,
                 already_computed_units,
                 in_settle_period,
                 total_hash,
