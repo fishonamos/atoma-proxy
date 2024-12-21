@@ -80,6 +80,10 @@ pub fn openapi_routes() -> Router {
                         "methodNameOverride": "create"
                     },
                     {
+                        "operationId": "chat_completions_create_stream",
+                        "methodNameOverride": "create_stream"
+                    },
+                    {
                         "operationId": "confidential_chat_completions_create",
                         "methodNameOverride": "create"
                     },

@@ -50,7 +50,7 @@ const MAX_TOKENS: &str = "max_tokens";
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(chat_completions_create),
+    paths(chat_completions_create, chat_completions_create_stream),
     components(schemas(
         ChatCompletionRequest,
         ChatCompletionMessage,
@@ -98,7 +98,6 @@ pub(crate) struct ChatCompletionsOpenApi;
     responses(
         (status = OK, description = "Chat completions", content(
             (ChatCompletionResponse = "application/json"),
-            //(ChatCompletionChunk = "text/event-stream")
         )),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),
@@ -116,7 +115,7 @@ pub async fn chat_completions_create(
     Extension(metadata): Extension<RequestMetadataExtension>,
     State(state): State<ProxyState>,
     headers: HeaderMap,
-    Json(payload): Json<ChatCompletionRequest>,
+    Json(payload): Json<CreateChatCompletionRequest>,
 ) -> Result<Response<Body>, StatusCode> {
     let is_streaming = payload.stream.ok_or_else(|| {
         error!("Missing or invalid 'stream' field");
@@ -129,7 +128,7 @@ pub async fn chat_completions_create(
             metadata.node_address,
             metadata.node_id,
             headers,
-            payload,
+            payload.chat_completion_request,
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
             metadata.endpoint,
@@ -144,7 +143,7 @@ pub async fn chat_completions_create(
             metadata.node_address,
             metadata.node_id,
             headers,
-            payload,
+            payload.chat_completion_request,
             metadata.num_compute_units as i64,
             metadata.selected_stack_small_id,
             metadata.endpoint,
@@ -154,6 +153,33 @@ pub async fn chat_completions_create(
         )
         .await
     }
+}
+
+#[utoipa::path(
+    post,
+    path = "#stream",
+    security(
+        ("bearerAuth" = [])
+    ),
+    responses(
+        (status = OK, description = "Chat completions", content(
+            (ChatCompletionStreamResponse = "text/event-stream")
+        )),
+        (status = BAD_REQUEST, description = "Bad request"),
+        (status = UNAUTHORIZED, description = "Unauthorized"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
+    )
+)]
+#[allow(dead_code)]
+pub async fn chat_completions_create_stream(
+    Extension(_metadata): Extension<RequestMetadataExtension>,
+    State(_state): State<ProxyState>,
+    _headers: HeaderMap,
+    Json(_payload): Json<CreateChatCompletionStreamRequest>,
+) -> Result<Response<Body>, StatusCode> {
+    // This endpoint exists only for OpenAPI documentation
+    // Actual streaming is handled by chat_completions_create
+    Err(StatusCode::NOT_IMPLEMENTED)
 }
 
 /// OpenAPI documentation structure for confidential chat completions endpoint.
@@ -726,6 +752,27 @@ pub(crate) mod utils {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateChatCompletionRequest {
+    #[serde(flatten)]
+    pub chat_completion_request: ChatCompletionRequest,
+
+    /// Whether to stream back partial progress. Must be false for this request type.
+    #[schema(default = false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateChatCompletionStreamRequest {
+    #[serde(flatten)]
+    pub chat_completion_request: ChatCompletionRequest,
+
+    /// Whether to stream back partial progress. Must be true for this request type.
+    #[schema(default = true)]
+    pub stream: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ChatCompletionRequest {
     /// ID of the model to use
     pub model: String,
@@ -813,8 +860,6 @@ pub struct ChatCompletionMessage {
     pub name: Option<String>,
 }
 
-//TODO: Add support for streaming responses
-
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ChatCompletionResponse {
     /// A unique identifier for the chat completion.
@@ -835,6 +880,12 @@ pub struct ChatCompletionResponse {
     /// The system fingerprint for the completion, if applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ChatCompletionStreamResponse {
+    /// The stream of chat completion chunks.
+    pub data: ChatCompletionChunk,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
