@@ -43,14 +43,14 @@ pub struct StackEntryResponse {
 pub struct Sui {
     /// Sui wallet context
     wallet_ctx: WalletContext,
-    /// TOMA wallet object ID
-    toma_wallet_id: Option<ObjectID>,
+    /// USDC wallet object ID
+    usdc_wallet_id: Option<ObjectID>,
     /// Atoma package object ID
     atoma_package_id: ObjectID,
     /// Atoma DB object ID
     atoma_db_id: ObjectID,
-    /// TOMA package object ID
-    toma_package_id: ObjectID,
+    /// USDC package object ID
+    usdc_package_id: ObjectID,
 }
 
 impl Sui {
@@ -66,10 +66,10 @@ impl Sui {
 
         Ok(Self {
             wallet_ctx,
-            toma_wallet_id: None,
+            usdc_wallet_id: None,
             atoma_package_id: sui_config.atoma_package_id(),
             atoma_db_id: sui_config.atoma_db(),
-            toma_package_id: sui_config.toma_package_id(),
+            usdc_package_id: sui_config.usdc_package_id(),
         })
     }
 
@@ -110,7 +110,7 @@ impl Sui {
     ) -> Result<StackEntryResponse> {
         let client = self.wallet_ctx.get_client().await?;
         let address = self.wallet_ctx.active_address()?;
-        let toma_wallet_id = self.get_or_load_toma_wallet_object_id().await?;
+        let usdc_wallet_id = self.get_or_load_usdc_wallet_object_id().await?;
 
         let tx = client
             .transaction_builder()
@@ -122,7 +122,7 @@ impl Sui {
                 vec![],
                 vec![
                     SuiJsonValue::from_object_id(self.atoma_db_id),
-                    SuiJsonValue::from_object_id(toma_wallet_id),
+                    SuiJsonValue::from_object_id(usdc_wallet_id),
                     SuiJsonValue::new(task_small_id.to_string().into())?,
                     SuiJsonValue::new(num_compute_units.to_string().into())?,
                     SuiJsonValue::new(price_per_one_million_compute_units.to_string().into())?,
@@ -154,36 +154,36 @@ impl Sui {
         })
     }
 
-    /// Get or load the TOMA wallet object ID
+    /// Get or load the USDC wallet object ID
     ///
-    /// This method checks if the TOMA wallet object ID is already loaded and returns it if so.
-    /// Otherwise, it loads the TOMA wallet object ID by finding the most balance TOMA coin for the active address.
+    /// This method checks if the USDC wallet object ID is already loaded and returns it if so.
+    /// Otherwise, it loads the USDC wallet object ID by finding the most balance USDC coin for the active address.
     ///
     /// # Returns
     ///
-    /// Returns the TOMA wallet object ID.
+    /// Returns the USDC wallet object ID.
     ///
     /// # Errors
     ///
-    /// Returns an error if no TOMA wallet is found for the active address.
+    /// Returns an error if no USDC wallet is found for the active address.
     ///
     /// # Examples
     ///
     /// ```rust,ignore
     /// let mut client = AtomaProxy::new(config).await?;
-    /// let toma_wallet_id = client.get_or_load_toma_wallet_object_id().await?;
+    /// let usdc_wallet_id = client.get_or_load_usdc_wallet_object_id().await?;
     /// ```
     #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
-    pub async fn get_or_load_toma_wallet_object_id(&mut self) -> Result<ObjectID> {
-        if let Some(toma_wallet_id) = self.toma_wallet_id {
-            Ok(toma_wallet_id)
+    pub async fn get_or_load_usdc_wallet_object_id(&mut self) -> Result<ObjectID> {
+        if let Some(usdc_wallet_id) = self.usdc_wallet_id {
+            Ok(usdc_wallet_id)
         } else {
-            let toma_wallet = self.find_toma_token_wallet(self.toma_package_id).await;
-            if let Ok(toma_wallet) = toma_wallet {
-                self.toma_wallet_id = Some(toma_wallet);
-                Ok(toma_wallet)
+            let usdc_wallet = self.find_usdc_token_wallet(self.usdc_package_id).await;
+            if let Ok(usdc_wallet) = usdc_wallet {
+                self.usdc_wallet_id = Some(usdc_wallet);
+                Ok(usdc_wallet)
             } else {
-                anyhow::bail!("No TOMA wallet found")
+                anyhow::bail!("No USDC wallet found")
             }
         }
     }
@@ -214,24 +214,24 @@ impl Sui {
         Ok(signature.encode_base64())
     }
 
-    /// Find the TOMA token wallet for the given address
+    /// Find the USDC token wallet for the given address
     ///
     /// # Returns
     ///
-    /// Returns the TOMA token wallet object ID.
+    /// Returns the USDC token wallet object ID.
     ///
     /// # Errors
     ///
-    /// Returns an error if no TOMA wallet is found for the active address.
+    /// Returns an error if no USDC wallet is found for the active address.
     #[instrument(level = "info", skip_all, fields(address = %self.wallet_ctx.active_address().unwrap()))]
-    async fn find_toma_token_wallet(&mut self, toma_package: ObjectID) -> Result<ObjectID> {
+    async fn find_usdc_token_wallet(&mut self, usdc_package: ObjectID) -> Result<ObjectID> {
         let client = self.wallet_ctx.get_client().await?;
         let active_address = self.wallet_ctx.active_address()?;
         let Page { data: coins, .. } = client
             .coin_read_api()
             .get_coins(
                 active_address,
-                Some(format!("{toma_package}::toma::TOMA")),
+                Some(format!("{usdc_package}::usdc::USDC")),
                 None,
                 None,
             )
@@ -241,12 +241,12 @@ impl Sui {
             .max_by_key(|coin| coin.balance)
             .map(|coin| coin.coin_object_id)
             .ok_or_else(|| {
-                error!("No TOMA coins found for {active_address}");
+                error!("No USDC coins found for {active_address}");
                 anyhow::anyhow!(
-                    "No TOMA coins for {active_address}. \
+                    "No USDC coins for {active_address}. \
                     Have you just received them? \
                     It may take a few seconds for cache to refresh. \
-                    Double check that your address owns TOMA coins and try again."
+                    Double check that your address owns USDC coins and try again."
                 )
             })
     }
