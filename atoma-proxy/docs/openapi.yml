@@ -1008,11 +1008,12 @@ components:
       type: object
       description: Individual image data in the response
       required:
-      - revised_prompt
       - url
       properties:
         revised_prompt:
-          type: string
+          type:
+          - string
+          - 'null'
         url:
           type: string
     SelectNodePublicKeyRequest:
