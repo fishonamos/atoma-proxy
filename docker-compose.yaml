@@ -23,7 +23,8 @@ services:
     volumes:
       - ${CONFIG_PATH:-./config.toml}:/app/config.toml
       - ./logs:/app/logs
-      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/root/.sui/sui_config
+      - sui-config-volume:/root/.sui/sui_config
+      - ${SUI_CONFIG_PATH:-~/.sui/sui_config}:/tmp/.sui/sui_config
     env_file:
       - .env
     ports:
@@ -35,6 +36,7 @@ services:
 
 volumes:
   postgres-data:
+  sui-config-volume:
 
 networks:
   atoma-network:
