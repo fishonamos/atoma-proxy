@@ -95,7 +95,7 @@ pub(crate) struct ChatCompletionsOpenApi;
     security(
         ("bearerAuth" = [])
     ),
-    request_body = ChatCompletionRequest,
+    request_body = CreateChatCompletionRequest,
     responses(
         (status = OK, description = "Chat completions", content(
             (ChatCompletionResponse = "application/json"),
@@ -167,6 +167,7 @@ pub async fn chat_completions_create(
     security(
         ("bearerAuth" = [])
     ),
+    request_body = CreateChatCompletionStreamRequest,
     responses(
         (status = OK, description = "Chat completions", content(
             (ChatCompletionStreamResponse = "text/event-stream")
@@ -284,7 +285,7 @@ pub(crate) struct ConfidentialChatCompletionsOpenApi;
 #[utoipa::path(
     post,
     path = "",
-    request_body = ChatCompletionRequest,
+    request_body = CreateChatCompletionRequest,
     security(
         ("bearerAuth" = [])
     ),
