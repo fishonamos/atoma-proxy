@@ -173,8 +173,7 @@ paths:
       requestBody:
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CreateChatCompletionRequest'
+            schema: {}
         required: true
       responses:
         '200':
@@ -281,8 +280,7 @@ paths:
       requestBody:
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ChatCompletionRequest'
+            schema: {}
         required: true
       responses:
         '200':
@@ -817,17 +815,6 @@ components:
           type: integer
           format: int32
           description: Total number of tokens used (prompt + completion).
-    CreateChatCompletionRequest:
-      allOf:
-      - $ref: '#/components/schemas/ChatCompletionRequest'
-      - type: object
-        properties:
-          stream:
-            type:
-            - boolean
-            - 'null'
-            description: Whether to stream back partial progress. Must be false for this request type.
-            default: false
     CreateChatCompletionStreamRequest:
       allOf:
       - $ref: '#/components/schemas/ChatCompletionRequest'
