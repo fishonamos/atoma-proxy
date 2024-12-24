@@ -207,6 +207,8 @@ paths:
           description: Chat completions
           content:
             text/event-stream:
+              # DO NOT DELETE:This is a custom extension required by Speakeasy to handle SSE
+              x-speakeasy-sse-sentinel: '[DONE]'
               schema:
                 $ref: '#/components/schemas/ChatCompletionStreamResponse'
         '400':
@@ -1006,11 +1008,12 @@ components:
       type: object
       description: Individual image data in the response
       required:
-      - revised_prompt
       - url
       properties:
         revised_prompt:
-          type: string
+          type:
+          - string
+          - 'null'
         url:
           type: string
     SelectNodePublicKeyRequest:

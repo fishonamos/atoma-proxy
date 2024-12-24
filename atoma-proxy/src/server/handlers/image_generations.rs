@@ -395,6 +395,7 @@ pub struct CreateImageResponse {
 /// Individual image data in the response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ImageData {
-    pub revised_prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revised_prompt: Option<String>,
     pub url: String,
 }
