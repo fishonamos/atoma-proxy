@@ -95,6 +95,7 @@ pub(crate) struct ChatCompletionsOpenApi;
     security(
         ("bearerAuth" = [])
     ),
+    request_body = ChatCompletionRequest,
     responses(
         (status = OK, description = "Chat completions", content(
             (ChatCompletionResponse = "application/json"),
@@ -283,6 +284,7 @@ pub(crate) struct ConfidentialChatCompletionsOpenApi;
 #[utoipa::path(
     post,
     path = "",
+    request_body = ChatCompletionRequest,
     security(
         ("bearerAuth" = [])
     ),

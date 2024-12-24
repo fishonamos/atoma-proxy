@@ -173,7 +173,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
         required: true
       responses:
         '200':
@@ -280,7 +281,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
         required: true
       responses:
         '200':
