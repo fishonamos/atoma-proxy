@@ -118,15 +118,17 @@ pub async fn chat_completions_create(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, StatusCode> {
-    let is_streaming = payload.get("stream").ok_or_else(|| {
-        error!("Missing or invalid 'stream' field");
-        StatusCode::BAD_REQUEST
-    })?
-    .as_bool()
-    .ok_or_else(|| {
-        error!("Invalid 'stream' field");
-        StatusCode::BAD_REQUEST
-    })?;
+    let is_streaming = payload
+        .get("stream")
+        .ok_or_else(|| {
+            error!("Missing or invalid 'stream' field");
+            StatusCode::BAD_REQUEST
+        })?
+        .as_bool()
+        .ok_or_else(|| {
+            error!("Invalid 'stream' field");
+            StatusCode::BAD_REQUEST
+        })?;
 
     if is_streaming {
         handle_streaming_response(
@@ -309,15 +311,17 @@ pub async fn confidential_chat_completions_create(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<Response<Body>, StatusCode> {
-    let is_streaming = payload.get("stream").ok_or_else(|| {
-        error!("Missing or invalid 'stream' field");
-        StatusCode::BAD_REQUEST
-    })?
-    .as_bool()
-    .ok_or_else(|| {
-        error!("Invalid 'stream' field");
-        StatusCode::BAD_REQUEST
-    })?;
+    let is_streaming = payload
+        .get("stream")
+        .ok_or_else(|| {
+            error!("Missing or invalid 'stream' field");
+            StatusCode::BAD_REQUEST
+        })?
+        .as_bool()
+        .ok_or_else(|| {
+            error!("Invalid 'stream' field");
+            StatusCode::BAD_REQUEST
+        })?;
 
     if is_streaming {
         handle_streaming_response(
