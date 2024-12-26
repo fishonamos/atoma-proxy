@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS node_subscriptions (
     price_per_one_million_compute_units BIGINT NOT NULL,
     max_num_compute_units BIGINT NOT NULL,
     valid BOOLEAN NOT NULL,
-    PRIMARY KEY (task_small_id, node_small_id)
+    PRIMARY KEY (task_small_id, node_small_id),
+    FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_node_subscriptions_task_small_id_node_small_id ON node_subscriptions (task_small_id, node_small_id);
@@ -41,13 +43,15 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id BIGSERIAL PRIMARY KEY,
     token_hash VARCHAR(255) UNIQUE NOT NULL,
-    user_id BIGINT NOT NULL
+    user_id BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
 CREATE TABLE IF NOT EXISTS api_tokens (
     id BIGSERIAL PRIMARY KEY,
     token VARCHAR(255) UNIQUE NOT NULL,
-    user_id BIGINT NOT NULL
+    user_id BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
 -- Create stacks table
@@ -63,7 +67,10 @@ CREATE TABLE IF NOT EXISTS stacks (
     in_settle_period BOOLEAN NOT NULL,
     total_hash BYTEA NOT NULL,
     num_total_messages BIGINT NOT NULL,
-    user_id BIGINT NOT NULL
+    user_id BIGINT NOT NULL,
+    FOREIGN KEY (task_small_id) REFERENCES tasks (task_small_id),
+    FOREIGN KEY (user_id) REFERENCES users (id),
+    FOREIGN KEY (selected_node_id, task_small_id) REFERENCES node_subscriptions (node_small_id, task_small_id)
 );
 
 -- Create indices for stacks table
@@ -83,7 +90,8 @@ CREATE TABLE IF NOT EXISTS stack_settlement_tickets (
     already_attested_nodes TEXT NOT NULL,
     is_in_dispute BOOLEAN NOT NULL,
     user_refund_amount INTEGER NOT NULL,
-    is_claimed BOOLEAN NOT NULL
+    is_claimed BOOLEAN NOT NULL,
+    FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
 );
 
 -- Create index for stack settlement tickets table
@@ -96,7 +104,8 @@ CREATE TABLE IF NOT EXISTS stack_attestation_disputes (
     attestation_node_id INTEGER NOT NULL,
     original_node_id INTEGER NOT NULL,
     original_commitment BYTEA NOT NULL,
-    PRIMARY KEY (stack_small_id, attestation_node_id)
+    PRIMARY KEY (stack_small_id, attestation_node_id),
+    FOREIGN KEY (stack_small_id) REFERENCES stacks (stack_small_id)
 );
 
 -- Create node performance tables
@@ -105,27 +114,31 @@ CREATE TABLE IF NOT EXISTS node_throughput_performance (
     queries BIGINT NOT NULL,
     input_tokens BIGINT NOT NULL,
     output_tokens BIGINT NOT NULL,
-    time DOUBLE PRECISION NOT NULL
+    time DOUBLE PRECISION NOT NULL,
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 CREATE TABLE IF NOT EXISTS node_prefill_performance (
     node_small_id BIGINT PRIMARY KEY,
     queries BIGINT NOT NULL,
     tokens BIGINT NOT NULL,
-    time DOUBLE PRECISION NOT NULL
+    time DOUBLE PRECISION NOT NULL,
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 CREATE TABLE IF NOT EXISTS node_decode_performance (
     node_small_id BIGINT PRIMARY KEY,
     queries BIGINT NOT NULL,
     tokens BIGINT NOT NULL,
-    time DOUBLE PRECISION NOT NULL
+    time DOUBLE PRECISION NOT NULL,
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 CREATE TABLE IF NOT EXISTS node_latency_performance (
     node_small_id BIGINT PRIMARY KEY,
     queries BIGINT NOT NULL,
-    latency DOUBLE PRECISION NOT NULL
+    latency DOUBLE PRECISION NOT NULL,
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 -- Create node_public_keys table
@@ -135,7 +148,8 @@ CREATE TABLE IF NOT EXISTS node_public_keys (
     key_rotation_counter BIGINT NOT NULL,
     public_key BYTEA NOT NULL,
     tee_remote_attestation_bytes BYTEA NOT NULL,
-    is_valid BOOLEAN NOT NULL
+    is_valid BOOLEAN NOT NULL,
+    FOREIGN KEY (node_small_id) REFERENCES nodes (node_small_id)
 );
 
 -- Create stats tables
