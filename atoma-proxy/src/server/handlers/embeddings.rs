@@ -374,6 +374,15 @@ async fn handle_embeddings_response(
             endpoint: endpoint.to_string(),
         })?;
 
+    let num_input_compute_units = if endpoint == CONFIDENTIAL_EMBEDDINGS_PATH {
+        response
+            .get("total_tokens")
+            .map(|u| u.as_u64().unwrap_or(0))
+            .unwrap_or(0) as i64
+    } else {
+        num_input_compute_units
+    };
+
     // Update the node throughput performance
     state
         .state_manager_sender
