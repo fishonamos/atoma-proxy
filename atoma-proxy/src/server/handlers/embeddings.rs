@@ -15,8 +15,10 @@ use tracing::instrument;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::server::{
-    error::AtomaProxyError, http_server::ProxyState, middleware::RequestMetadataExtension,
-    types::ConfidentialComputeRequest,
+    error::AtomaProxyError,
+    http_server::ProxyState,
+    middleware::RequestMetadataExtension,
+    types::{ConfidentialComputeRequest, ConfidentialComputeResponse},
 };
 
 use super::{request_model::RequestModel, update_state_manager};
@@ -233,7 +235,7 @@ pub(crate) struct ConfidentialEmbeddingsOpenApi;
         ("bearerAuth" = [])
     ),
     responses(
-        (status = OK, description = "Confidential embeddings generated successfully", body = ConfidentialComputeRequest),
+        (status = OK, description = "Confidential embeddings generated successfully", body = ConfidentialComputeResponse),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = UNAUTHORIZED, description = "Unauthorized"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
