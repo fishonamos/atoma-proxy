@@ -5,12 +5,14 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use tracing::{error, instrument};
 use utoipa::OpenApi;
 
 use crate::ProxyServiceState;
 
 type Result<T> = std::result::Result<T, StatusCode>;
+type StackWithTimeStamp = (Stack, DateTime<Utc>);
 
 /// The path for the get_current_stacks endpoint.
 pub(crate) const GET_CURRENT_STACKS_PATH: &str = "/current_stacks";
@@ -151,7 +153,7 @@ pub(crate) struct GetStacksByUserId;
 pub(crate) async fn get_all_stacks_for_user(
     State(proxy_service_state): State<ProxyServiceState>,
     headers: HeaderMap,
-) -> Result<Json<Vec<Stack>>> {
+) -> Result<Json<Vec<StackWithTimeStamp>>> {
     let auth_header = headers
         .get("Authorization")
         .ok_or(StatusCode::UNAUTHORIZED)?
