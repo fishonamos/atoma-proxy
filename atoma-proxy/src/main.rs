@@ -79,15 +79,16 @@ impl Config {
 }
 
 /// Configure logging with JSON formatting, file output, and console output
-fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<WorkerGuard> {
+fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard)> {
     // Create logs directory if it doesn't exist
     std::fs::create_dir_all(&log_dir).context("Failed to create logs directory")?;
 
     // Set up file appender with rotation
     let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
 
-    // Create non-blocking writer and keep the guard
-    let (non_blocking_appender, guard) = non_blocking(file_appender);
+    // Create non-blocking writers for both console and file output
+    let (non_blocking_appender, file_guard) = non_blocking(file_appender);
+    let (non_blocking_stdout, stdout_guard) = non_blocking(std::io::stdout());
 
     // Create JSON formatter for file output
     let file_layer = fmt::layer()
@@ -109,11 +110,12 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<WorkerGuard> {
         .with_thread_ids(true)
         .with_line_number(true)
         .with_file(true)
-        .with_span_events(FmtSpan::ENTER);
+        .with_span_events(FmtSpan::ENTER)
+        .with_writer(non_blocking_stdout);
 
     // Create filter from environment variable or default to info
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,atoma_node_service=debug"));
+        .unwrap_or_else(|_| EnvFilter::new("debug,atoma_proxy=debug"));
 
     // Combine layers with filter
     Registry::default()
@@ -122,17 +124,22 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<WorkerGuard> {
         .with(file_layer)
         .init();
 
-    // Return the guard so it can be stored in main
-    Ok(guard)
+    // Return both guards so they can be stored in main
+    Ok((file_guard, stdout_guard))
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Store the guard to keep the logging active
-    let _guard = setup_logging(LOGS).context("Failed to setup logging")?;
+    // Store both guards to keep logging active for the duration of the program
+    let (_file_guard, _stdout_guard) = setup_logging(LOGS).context("Failed to setup logging")?;
+
+    tracing::info!("Starting Atoma Proxy Service...");
 
     let args = Args::parse();
+    tracing::info!("Loading configuration from: {}", args.config_path);
+
     let config = Config::load(args.config_path).await;
+    tracing::info!("Configuration loaded successfully");
 
     let (shutdown_sender, mut shutdown_receiver) = watch::channel(false);
     let (event_subscriber_sender, event_subscriber_receiver) = flume::unbounded();
