@@ -17,6 +17,7 @@ use tokio::{
     try_join,
 };
 use tracing::{error, instrument};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::{
     non_blocking,
     rolling::{RollingFileAppender, Rotation},
@@ -78,12 +79,15 @@ impl Config {
 }
 
 /// Configure logging with JSON formatting, file output, and console output
-fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
+fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<WorkerGuard> {
+    // Create logs directory if it doesn't exist
+    std::fs::create_dir_all(&log_dir).context("Failed to create logs directory")?;
+
     // Set up file appender with rotation
     let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
 
-    // Create a non-blocking writer
-    let (non_blocking_appender, _guard) = non_blocking(file_appender);
+    // Create non-blocking writer and keep the guard
+    let (non_blocking_appender, guard) = non_blocking(file_appender);
 
     // Create JSON formatter for file output
     let file_layer = fmt::layer()
@@ -118,12 +122,15 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<()> {
         .with(file_layer)
         .init();
 
-    Ok(())
+    // Return the guard so it can be stored in main
+    Ok(guard)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    setup_logging(LOGS).context("Failed to setup logging")?;
+    // Store the guard to keep the logging active
+    let _guard = setup_logging(LOGS).context("Failed to setup logging")?;
+
     let args = Args::parse();
     let config = Config::load(args.config_path).await;
 
