@@ -86,7 +86,7 @@ fn setup_logging<P: AsRef<Path>>(log_dir: P) -> Result<(WorkerGuard, WorkerGuard
     // Set up file appender with rotation
     let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, LOG_FILE);
 
-    // Create non-blocking writers for both console and file output
+    // Create non-blocking writers
     let (non_blocking_appender, file_guard) = non_blocking(file_appender);
     let (non_blocking_stdout, stdout_guard) = non_blocking(std::io::stdout());
 
